@@ -20,12 +20,12 @@ Do not claim these are interchangeable. Static EQ cannot remove audience chatter
 ### Repository and Git state at handover
 
 - Upstream source was fetched from `https://github.com/linuxmatters/jive-vocals.git` at commit `d1c9315540d271bf82d012fae39816f1d66544a1`.
-- Current local branch: `feature/room-live-dsp-foundation`, tracking `upstream/main`.
-- Only an `upstream` remote is configured. It points to `linuxmatters/jive-vocals` for fetch and push. **Do not push to it.**
-- GitHub SSH authentication works as user `halcycon` (`ssh -T git@github.com` succeeded).
-- Neither `halcycon/jive-vocals` nor `halcycon/jive-talking` existed when checked. No fork/origin was created.
-- The GitHub CLI account token was invalid. An attempted device authorization was cancelled at the user's request.
-- Nothing from this room-DSP work has been committed or pushed. The intended scope is all files listed below, including this handover and the task specification. Inspect before staging.
+- Current local branch: `feature/room-live-dsp-foundation`.
+- Remotes: `origin` is `git@github.com:halcycon/jive-vocals-room.git` (public fork). `upstream` is `https://github.com/linuxmatters/jive-vocals.git`. **Do not push to upstream.**
+- GitHub SSH and `gh` authenticate as `halcycon`.
+- Public repo: https://github.com/halcycon/jive-vocals-room
+- Foundation commit on origin: `feat: add room DSP foundation and offline analyser`.
+- Do not open a PR against `linuxmatters/jive-vocals`.
 - The `ffmpeg-statigo` submodule is initialized at the upstream-pinned commit and its `lib/linux_amd64/libffmpeg.a` dependency has been downloaded. The submodule itself is clean.
 
 Current expected worktree changes:
@@ -42,7 +42,7 @@ M  justfile
 ?? internal/roomfile/
 ```
 
-Before publishing, create the user's GitHub fork through an authenticated browser/API, add it as SSH remote `origin`, verify its URL, then commit conventionally and push only to `origin`. A suitable first commit is `feat: add room DSP foundation and offline analyser`. Do not open a PR against `linuxmatters/jive-vocals`.
+Before publishing, create the user's GitHub fork through an authenticated browser/API, add it as SSH remote `origin`, verify its URL, then commit conventionally and push only to `origin`. A suitable first commit is `feat: add room DSP foundation and offline analyser`. Do not open a PR against `linuxmatters/jive-vocals`. That publishing step is done: origin is `halcycon/jive-vocals-room`, public, and the foundation commit is on `feature/room-live-dsp-foundation` and `main`.
 
 ### Implemented foundation (M0)
 
@@ -87,14 +87,18 @@ Real-time invariants are non-negotiable: the eventual callback must not allocate
 [`cmd/jive-room/main.go`](cmd/jive-room/main.go) currently accepts:
 
 ```text
--empty     required 10–20 second empty-room WAV/FLAC
--occupied  optional occupied-room WAV/FLAC
--presenter optional presenter-test WAV/FLAC
--venue     optional room label
--out       JSON destination, default jive-room-session.json
+-empty          required 10–20 second empty-room WAV/FLAC unless -generate-pink is set
+-occupied       optional occupied-room WAV/FLAC
+-presenter      optional presenter-test WAV/FLAC
+-pa-reference   optional PA/room reference WAV/FLAC (typically generated pink noise)
+-pa-measured    optional microphone capture of that test signal through the PA
+-generate-pink  write a band-limited pink-noise WAV and sibling .signal.json, then exit
+-pink-*         generator settings (rate, duration, headroom, fades, seed, band limits)
+-venue          optional room label
+-out            JSON destination, default jive-room-session.json
 ```
 
-It emits versioned JSON and a sibling Markdown report. The persisted PA response explicitly says `pink_noise_averaging` / `not_measured`; it does not pretend Stage 3 exists.
+It emits versioned JSON and a sibling Markdown report. `-generate-pink` never starts playback or raises PA gain. PA analysis is optional; without both `-pa-reference` and `-pa-measured` the session still records `pink_noise_averaging` / `not_measured`.
 
 ### Verification already completed
 
@@ -125,12 +129,19 @@ All existing upstream Go tests and the new tests passed. New deterministic cover
 - Fine spectrum levels are internally consistent relative power values. They are not microphone-calibrated SPL and must not be labelled dB SPL.
 - Presenter margin uses separate capture spectra, not simultaneous speech/noise separation. The report/UI must describe it as an estimate.
 - Tonal thresholds (`8 dB` local prominence, `>= 0.5` frame persistence, `±4 Hz` hum matching) are named but only synthetic-test justified. Validate against recorded room, speech, and music fixtures before treating confidence as calibrated.
-- The current recommendation engine only demonstrates hum investigation, occupied masking warning, and one broad low/low-mid cut. It does not yet reason over PA transfer response, nulls, feedback, HPF choice, or total multi-filter correction.
+- The current recommendation engine handles hum investigation, occupied masking warning, one broad low/low-mid empty-room cut, and Stage 3 PA transfer cuts/bounded boosts with `do_not_boost` for deep nulls and comb notches. It does not yet reason over feedback, HPF choice, operator-applied EQ, or verification comparison.
 - JSON schema is versioned but has no golden full-session fixture or migration reader yet. Add a golden schema compatibility test before broad distribution.
 - Markdown is useful but minimal. Preserve objective language and distinguish measured facts from advice.
 - FLAC uses the same FFmpeg path but only WAV has a generated integration test so far.
-- No CLI end-to-end golden test currently asserts both emitted files.
-- No commits exist. Re-run tests after any review fixes and before the initial commit.
+- CLI end-to-end coverage now asserts generated pink, session JSON, and Markdown for a PA analysis. It is not yet a golden full-session fixture.
+
+### Stage 3 offline PA/room response (implemented)
+
+- Deterministic band-limited pink-noise generator (`GeneratePink` / `WritePinkWAV`) with explicit rate, duration, headroom, fades, seed, and HPF/LPF. WAV plus `.signal.json`; never plays audio.
+- `AnalysePAResponse` computes transfer magnitude as a measured/reference power ratio with `power_ratio_epsilon`, averages FFT frames, stores 1/24-octave fine and 1/6-octave smoothed curves, and shifts so the 500–2000 Hz median is 0 dB. The shift is recorded as `midband_offset_db` and is not an EQ or master-gain recommendation.
+- Features: broad excess/deficit, narrow resonance, deep null, comb notch. Deep nulls and comb notches are `do_not_boost`.
+- Conservative corrections: cuts before boosts, broad before narrow, maximum +3 dB boost, automatic cuts capped at 6 dB, total |correction| capped at 12 dB, total positive gain capped at +3 dB, mixer-mapped frequencies, `starting_point=true`.
+- Deterministic tests cover broad +6 dB excess, narrow resonance, deep null, comb notches, noise contamination, mismatched sample rates, boost/total-gain bounds, pink determinism, and a CLI end-to-end JSON+Markdown assertion.
 
 ### Next implementation sequence
 
@@ -138,19 +149,7 @@ Proceed milestone by milestone; do not jump directly into automatic feedback sup
 
 #### 1. Complete Stage 3 offline PA/room response
 
-Implement this next:
-
-1. Add a deterministic, band-limited pink-noise generator with explicit sample rate, duration, level/headroom, fade-in/out, seed, and WAV output. Never initiate playback or raise PA gain automatically.
-2. Define reference and recorded-capture inputs in `PAResponse`. Record generator settings and capture metadata in the versioned schema.
-3. Analyse reference and measurement with matching FFT/window configuration. Compute transfer magnitude by power or amplitude ratio with an explicit epsilon/floor; never subtract unrelated axes.
-4. Average over time, aggregate/smooth logarithmically (start around 1/6 octave for practical advice), and retain fine bins internally for narrow-peak/null classification.
-5. Classify broad excesses, narrow resonances, and deep/narrow nulls. Deep nulls and comb notches must become `do_not_boost` diagnostics.
-6. Generate conservative corrections: cuts before boosts, broad before narrow, maximum +3 dB boost, bounded cut depth, bounded total correction, and no automatic master-gain increase. Every recommendation carries evidence, reason, confidence, and `starting_point=true`.
-7. Solve corrections through the selected mixer model rather than returning unavailable frequencies.
-8. Add deterministic synthetic transfer-function tests, including broad +6 dB excess, narrow resonance, deep null, comb-filter-like notches, noise contamination, mismatched sample rate rejection, and boost/total-gain bounds.
-9. Extend JSON and Markdown output, then add a CLI end-to-end test.
-
-Prefer extracting reusable spectral primitives from `analyser.go` carefully rather than creating two competing FFT implementations. Keep package interfaces small; likely types are `TestSignalSpec`, `ResponseAnalysisConfig`, and `AnalysePAResponse(reference PCM, measured PCM, config)`. Do not expose internal FFT details unless a caller genuinely needs them.
+Done. Keep the generator offline-only. When tightening classification, preserve `do_not_boost` for deep nulls and comb notches, and never auto-increase master gain.
 
 #### 2. Finish the guided offline M1 experience
 

@@ -10,4 +10,4 @@ Start PA/room measurement with band-limited pink noise played through the actual
 
 Pink noise is simple to generate, robust to modest timing uncertainty, and easy for inexperienced operators to repeat. Averaging reduces incidental noise and directly supports broad practical EQ advice. A logarithmic sweep provides higher signal-to-noise ratio and can separate impulse response/distortion, but needs synchronized routing, deconvolution, level safeguards, and more careful handling of time variance. Sweep support remains a compatible future method in the versioned schema.
 
-The implementation must warn before playback, require the operator to set a safe level, and never raise PA gain automatically. This ADR selects the method; playback and response extraction are not claimed by M1.
+The implementation must warn before playback, require the operator to set a safe level, and never raise PA gain automatically. `jive-room -generate-pink` writes the WAV and a sibling `.signal.json`; analysis consumes a separately recorded capture. Playback is never initiated by the tool.

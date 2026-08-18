@@ -44,7 +44,7 @@ func TestRecommendMapsCutToMixerAndDoesNotBoost(t *testing.T) {
 		return .1*math.Sin(2*math.Pi*250*float64(i)/r) + .005*math.Sin(2*math.Pi*2000*float64(i)/r)
 	}))
 	mixer := MixerCapability{Kind: MixerFixed3, Bands: []MixerBand{{Name: "low", FixedFrequencyHz: 200, MinGainDB: -12, MaxGainDB: 6}, {Name: "mid", FixedFrequencyHz: 2500, MinGainDB: -12, MaxGainDB: 6}, {Name: "high", FixedFrequencyHz: 10000, MinGainDB: -12, MaxGainDB: 6}}}
-	r := Recommend(m, nil, mixer)
+	r := Recommend(m, nil, nil, mixer)
 	found := false
 	for _, x := range r {
 		if x.GainDB > 0 {

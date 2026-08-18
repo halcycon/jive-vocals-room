@@ -4,13 +4,13 @@
 
 `jive-vocals` remains the file-oriented podcast processor. The additive `jive-room` command is the guided room-calibration control plane. It decodes captured WAV/FLAC through the existing FFmpeg adapter, then passes ordinary PCM to `internal/room`, whose analysis, comparison, mixer mapping, persistence, and reporting have no FFmpeg dependency.
 
-The wizard state will progress through empty room, occupied room, PA/room response, presenter test, and verification. Versioned `jive-room-session/v1` JSON is the canonical record. The current CLI implements the first two captures; PA response and presenter fields are deliberately schema/interface placeholders.
+The wizard state will progress through empty room, occupied room, PA/room response, presenter test, and verification. Versioned `jive-room-session/v1` JSON is the canonical record. The current CLI analyses empty-room, optional occupied-room, optional presenter, and optional PA/room-response captures. `jive-room -generate-pink` writes a band-limited test-signal WAV; it never starts playback or raises PA gain.
 
 Ambient noise, PA/room transfer response, speech masking, and feedback are separate evidence streams. Recommendations must identify their evidence and remain bounded starting points. In particular, audience chatter cannot be EQed away, tonal noise should be investigated, and deep transfer-response nulls must not invite large boosts.
 
 ## Package boundaries
 
-- `internal/room`: pure slow analysis and domain model. It accepts interleaved PCM, produces fine 1/24-octave and legacy 15-band views, persistent tonal peaks, mains-hum diagnostics, comparisons, and conservative mixer-constrained advice.
+- `internal/room`: pure slow analysis and domain model. It accepts interleaved PCM, produces fine 1/24-octave and legacy 15-band views, persistent tonal peaks, mains-hum diagnostics, comparisons, averaged pink-noise PA/room transfer magnitude, classified excesses/nulls, and conservative mixer-constrained advice.
 - `internal/roomfile`: non-real-time FFmpeg decode adapter for WAV/FLAC.
 - `internal/live`: interfaces and value types shared with future live implementations. It is scaffold only.
 - Future `internal/live/pipewire`: Go control-plane wrapper around a native C engine.
@@ -37,5 +37,5 @@ Pure analysis tests synthesize deterministic tones/noise and assert frequency, p
 
 ## Milestone status
 
-M0 boundaries and contracts are compilable. M1 currently supports empty and optional occupied file captures, spectral views, deltas, tonal/hum diagnostics, conservative recommendations, atomic JSON, and Markdown. PA-response, presenter analysis, live capture, transport, DSP, and feedback suppression are scaffold or later work.
+M0 boundaries and contracts are compilable. M1 currently supports empty and optional occupied file captures, spectral views, deltas, tonal/hum diagnostics, presenter-margin estimates, averaged pink-noise PA/room transfer analysis, conservative recommendations, atomic JSON, and Markdown. Live capture, transport, DSP, and feedback suppression remain later work.
 
