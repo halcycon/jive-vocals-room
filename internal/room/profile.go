@@ -12,19 +12,22 @@ type PCM struct {
 }
 
 type Session struct {
-	SchemaVersion string           `json:"schema_version"`
-	VenueLabel    string           `json:"venue_label,omitempty"`
-	CreatedAt     time.Time        `json:"created_at"`
-	Device        DeviceMetadata   `json:"device"`
-	Microphone    Microphone       `json:"microphone,omitempty"`
-	EmptyRoom     Measurement      `json:"empty_room"`
-	OccupiedRoom  *Measurement     `json:"occupied_room,omitempty"`
-	PARoom        *PAResponse      `json:"pa_room_response,omitempty"`
-	Presenter     *PresenterTest   `json:"presenter_test,omitempty"`
-	Mixer         MixerCapability  `json:"mixer"`
-	SuggestedEQ   []Recommendation `json:"suggested_eq"`
-	AppliedEQ     []EQSetting      `json:"operator_applied_eq,omitempty"`
-	Verification  *Measurement     `json:"verification,omitempty"`
+	SchemaVersion     string           `json:"schema_version"`
+	VenueLabel        string           `json:"venue_label,omitempty"`
+	CreatedAt         time.Time        `json:"created_at"`
+	CompletedStages   []string         `json:"completed_stages,omitempty"`
+	CaptureNotes      []string         `json:"capture_notes,omitempty"`
+	Device            DeviceMetadata   `json:"device"`
+	Microphone        Microphone       `json:"microphone,omitempty"`
+	EmptyRoom         Measurement      `json:"empty_room"`
+	OccupiedRoom      *Measurement     `json:"occupied_room,omitempty"`
+	PARoom            *PAResponse      `json:"pa_room_response,omitempty"`
+	Presenter         *PresenterTest   `json:"presenter_test,omitempty"`
+	Mixer             MixerCapability  `json:"mixer"`
+	SuggestedEQ       []Recommendation `json:"suggested_eq"`
+	AppliedEQ         []EQSetting      `json:"operator_applied_eq,omitempty"`
+	Verification      *Measurement     `json:"verification,omitempty"`
+	VerificationNotes []string         `json:"verification_notes,omitempty"`
 }
 
 type DeviceMetadata struct {
@@ -35,8 +38,16 @@ type DeviceMetadata struct {
 }
 
 type Microphone struct {
-	Identity        string `json:"identity,omitempty"`
-	CalibrationFile string `json:"calibration_file,omitempty"`
+	Identity        string            `json:"identity,omitempty"`
+	CalibrationFile string            `json:"calibration_file,omitempty"`
+	Calibration     *CalibrationCurve `json:"calibration,omitempty"`
+}
+
+type CalibrationCurve struct {
+	Source        string          `json:"source,omitempty"`
+	Points        []SpectralPoint `json:"points,omitempty"`
+	Applied       bool            `json:"applied"`
+	SPLCalibrated bool            `json:"spl_calibrated"`
 }
 
 type Measurement struct {
@@ -134,6 +145,10 @@ type PresenterTest struct {
 	OverallMarginDB  float64         `json:"overall_margin_db"`
 	BandMargins      []SpectralPoint `json:"band_margins,omitempty"`
 	PresenceMarginDB float64         `json:"presence_margin_db"`
+	LowMidExcessDB   float64         `json:"low_mid_excess_db"`
+	MaskedBands      []SpectralPoint `json:"masked_bands,omitempty"`
+	GainAdvice       string          `json:"gain_advice,omitempty"`
+	Speech           Measurement     `json:"speech"`
 }
 
 type Recommendation struct {

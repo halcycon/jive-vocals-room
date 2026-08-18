@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -37,6 +38,10 @@ func run(args []string) error {
 	paReference := fs.String("pa-reference", "", "reference WAV/FLAC for PA/room response, typically the generated pink-noise file")
 	paMeasured := fs.String("pa-measured", "", "microphone capture of the test signal through the PA")
 	generatePink := fs.String("generate-pink", "", "write a band-limited pink-noise WAV and exit; never starts playback or raises PA gain")
+	micCal := fs.String("mic-cal", "", "optional relative microphone calibration JSON (frequency_hz/level_db points). Not an SPL calibration")
+	micIdentity := fs.String("mic-identity", "", "optional measurement-microphone identity")
+	appliedEQ := fs.String("applied-eq", "", "optional operator-applied EQ JSON array")
+	verification := fs.String("verification", "", "optional verification WAV/FLAC captured after applying EQ")
 	venue := fs.String("venue", "", "venue or room label")
 	out := fs.String("out", "jive-room-session.json", "session JSON path")
 	pink := room.DefaultPinkSpec()
@@ -82,7 +87,18 @@ func run(args []string) error {
 		EmptyRoom:     emptyMeasurement,
 		Mixer:         room.DefaultParametricMixer(),
 		PARoom:        room.UnmeasuredPAResponse(),
+		Microphone:    room.Microphone{Identity: *micIdentity},
 	}
+	if *micCal != "" {
+		cal, err := room.LoadCalibrationCurve(*micCal)
+		if err != nil {
+			return err
+		}
+		s.Microphone.CalibrationFile = *micCal
+		s.Microphone.Calibration = &cal
+		s.EmptyRoom = room.ApplyCalibration(s.EmptyRoom, cal)
+	}
+	s.NoteCapture(room.StageEmpty, s.EmptyRoom.DurationSeconds)
 	var comparison *room.Comparison
 	if *occupied != "" {
 		p, err := roomfile.Decode(*occupied)
@@ -94,8 +110,13 @@ func run(args []string) error {
 			return err
 		}
 		s.OccupiedRoom = &m
-		c := room.Compare(s.EmptyRoom, m)
+		if s.Microphone.Calibration != nil {
+			calibrated := room.ApplyCalibration(m, *s.Microphone.Calibration)
+			s.OccupiedRoom = &calibrated
+		}
+		c := room.Compare(s.EmptyRoom, *s.OccupiedRoom)
 		comparison = &c
+		s.NoteCapture(room.StageOccupied, s.OccupiedRoom.DurationSeconds)
 	}
 	if *presenter != "" {
 		p, err := roomfile.Decode(*presenter)
@@ -106,12 +127,16 @@ func run(args []string) error {
 		if err != nil {
 			return err
 		}
+		if s.Microphone.Calibration != nil {
+			m = room.ApplyCalibration(m, *s.Microphone.Calibration)
+		}
 		noise := s.EmptyRoom
 		if s.OccupiedRoom != nil {
 			noise = *s.OccupiedRoom
 		}
 		presenterTest := room.AnalysePresenter(m, noise)
 		s.Presenter = &presenterTest
+		s.NoteCapture(room.StagePresenter, m.DurationSeconds)
 	}
 	if *paReference != "" {
 		ref, err := roomfile.Decode(*paReference)
@@ -136,8 +161,37 @@ func run(args []string) error {
 			pa.TestSignal = &pink
 		}
 		s.PARoom = &pa
+		if pa.MeasuredCapture != nil {
+			s.NoteCapture(room.StagePA, pa.MeasuredCapture.DurationSeconds)
+		} else {
+			s.CompletedStages = append(s.CompletedStages, room.StagePA)
+		}
 	}
-	s.SuggestedEQ = room.Recommend(s.EmptyRoom, s.OccupiedRoom, s.PARoom, s.Mixer)
+	if *appliedEQ != "" {
+		eq, err := loadAppliedEQ(*appliedEQ)
+		if err != nil {
+			return err
+		}
+		s.AppliedEQ = eq
+		s.CompletedStages = append(s.CompletedStages, room.StageAppliedEQ)
+	}
+	s.SuggestedEQ = room.RecommendSession(s)
+	if *verification != "" {
+		p, err := roomfile.Decode(*verification)
+		if err != nil {
+			return err
+		}
+		m, err := room.Analyse(p)
+		if err != nil {
+			return err
+		}
+		if s.Microphone.Calibration != nil {
+			m = room.ApplyCalibration(m, *s.Microphone.Calibration)
+		}
+		s.Verification = &m
+		s.VerificationNotes = room.VerifyRecommendations(s.EmptyRoom, m, s.SuggestedEQ)
+		s.NoteCapture(room.StageVerify, m.DurationSeconds)
+	}
 	if err = room.WriteJSON(*out, s); err != nil {
 		return err
 	}
@@ -147,4 +201,16 @@ func run(args []string) error {
 	}
 	fmt.Printf("Wrote %s and %s\n", *out, reportPath)
 	return nil
+}
+
+func loadAppliedEQ(path string) ([]room.EQSetting, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var eq []room.EQSetting
+	if err = json.Unmarshal(b, &eq); err != nil {
+		return nil, err
+	}
+	return eq, nil
 }

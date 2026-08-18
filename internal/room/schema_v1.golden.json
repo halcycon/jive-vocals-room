@@ -1,0 +1,52 @@
+{
+  "schema_version": "jive-room-session/v1",
+  "venue_label": "Golden Hall",
+  "created_at": "1970-01-01T00:00:01Z",
+  "completed_stages": ["empty_room"],
+  "capture_notes": ["empty_room capture is 2.0 s; 10–20 s is recommended for stable averaging."],
+  "device": {
+    "sample_rate_hz": 48000,
+    "channels": 1
+  },
+  "microphone": {
+    "identity": "test-mic",
+    "calibration": {
+      "source": "mic.json",
+      "points": [
+        {"frequency_hz": 100, "level_db": 0},
+        {"frequency_hz": 1000, "level_db": 0}
+      ],
+      "applied": true,
+      "spl_calibrated": false
+    }
+  },
+  "empty_room": {
+    "source": "empty.wav",
+    "duration_seconds": 2,
+    "broadband_rms_dbfs": -40,
+    "peak_dbfs": -20,
+    "spectral_flatness": 0.5,
+    "fine_spectrum": [{"frequency_hz": 1000, "level_db": -40}],
+    "jive_15_bands": [{"frequency_hz": 1000, "level_db": -40}]
+  },
+  "pa_room_response": {
+    "method": "pink_noise_averaging",
+    "status": "not_measured"
+  },
+  "mixer": {
+    "kind": "parametric_eq",
+    "bands": [
+      {"name": "low", "min_frequency_hz": 80, "max_frequency_hz": 500, "min_gain_db": -12, "max_gain_db": 6, "q": 1}
+    ],
+    "has_high_pass": true,
+    "high_pass_choices_hz": [80, 100]
+  },
+  "suggested_eq": [
+    {
+      "kind": "warning",
+      "reason": "placeholder",
+      "confidence": 0.5,
+      "starting_point": true
+    }
+  ]
+}

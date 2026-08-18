@@ -9,7 +9,19 @@ func Markdown(s Session, comparison *Comparison) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# Jive Room report: %s\n\n", s.VenueLabel)
 	fmt.Fprintf(&b, "Generated %s. Measurements are practical starting points, not a complete acoustic model.\n\n", s.CreatedAt.Format("2006-01-02 15:04 MST"))
+	if len(s.CompletedStages) > 0 {
+		fmt.Fprintf(&b, "Completed stages: %s.\n\n", strings.Join(s.CompletedStages, ", "))
+	}
+	for _, n := range s.CaptureNotes {
+		fmt.Fprintf(&b, "- %s\n", n)
+	}
+	if len(s.CaptureNotes) > 0 {
+		fmt.Fprint(&b, "\n")
+	}
 	fmt.Fprintf(&b, "## Empty room\n\nBroadband RMS: %.1f dBFS; spectral flatness: %.3f. Levels are relative FFT/dBFS values, not microphone-calibrated SPL.\n\n", s.EmptyRoom.BroadbandRMSDB, s.EmptyRoom.SpectralFlatness)
+	if s.Microphone.Calibration != nil {
+		fmt.Fprintf(&b, "A relative microphone calibration curve from %s was subtracted from measured spectra. This is not an SPL calibration.\n\n", s.Microphone.Calibration.Source)
+	}
 	if s.EmptyRoom.Hum != nil {
 		fmt.Fprintf(&b, "Likely %.0f Hz hum series detected. Investigate grounding, HVAC, fans, dimmers, and cabling before applying EQ.\n\n", s.EmptyRoom.Hum.FundamentalHz)
 	}
@@ -17,7 +29,10 @@ func Markdown(s Session, comparison *Comparison) string {
 		fmt.Fprintf(&b, "## Occupied-room change\n\nBroadband noise changed by %+.1f dB. Audience noise is a masking problem and cannot be removed by static EQ.\n\n", comparison.BroadbandDeltaDB)
 	}
 	if s.Presenter != nil {
-		fmt.Fprintf(&b, "## Presenter margin (estimate)\n\nOverall margin: %+.1f dB; 1.5–4 kHz presence margin: %+.1f dB. This compares separate captures on one FFT/dBFS axis, not simultaneous speech-to-noise separation.\n\n", s.Presenter.OverallMarginDB, s.Presenter.PresenceMarginDB)
+		fmt.Fprintf(&b, "## Presenter margin (estimate)\n\nOverall margin: %+.1f dB; 1.5–4 kHz presence margin: %+.1f dB; low/low-mid excess: %+.1f dB. This compares separate captures on one FFT/dBFS axis, not simultaneous speech-to-noise separation.\n\n", s.Presenter.OverallMarginDB, s.Presenter.PresenceMarginDB, s.Presenter.LowMidExcessDB)
+		if s.Presenter.GainAdvice != "" {
+			fmt.Fprintf(&b, "Master-gain advice: %s. jive-room never raises PA gain automatically.\n\n", s.Presenter.GainAdvice)
+		}
 	}
 	writePASection(&b, s.PARoom)
 	fmt.Fprint(&b, "## Suggested starting points\n\n")
@@ -29,6 +44,18 @@ func Markdown(s Session, comparison *Comparison) string {
 			fmt.Fprintf(&b, "- **%s at %.0f Hz (%+.1f dB):** %s\n", r.Kind, r.FrequencyHz, r.GainDB, r.Reason)
 		} else {
 			fmt.Fprintf(&b, "- **%s:** %s\n", r.Kind, r.Reason)
+		}
+	}
+	if len(s.AppliedEQ) > 0 {
+		fmt.Fprint(&b, "\n## Operator-applied EQ\n\n")
+		for _, eq := range s.AppliedEQ {
+			fmt.Fprintf(&b, "- %.0f Hz, %+.1f dB, Q %.2f\n", eq.FrequencyHz, eq.GainDB, eq.Q)
+		}
+	}
+	if len(s.VerificationNotes) > 0 {
+		fmt.Fprint(&b, "\n## Verification\n\n")
+		for _, n := range s.VerificationNotes {
+			fmt.Fprintf(&b, "- %s\n", n)
 		}
 	}
 	return b.String()

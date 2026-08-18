@@ -37,5 +37,5 @@ Pure analysis tests synthesize deterministic tones/noise and assert frequency, p
 
 ## Milestone status
 
-M0 boundaries and contracts are compilable. M1 currently supports empty and optional occupied file captures, spectral views, deltas, tonal/hum diagnostics, presenter-margin estimates, averaged pink-noise PA/room transfer analysis, conservative recommendations, atomic JSON, and Markdown. Live capture, transport, DSP, and feedback suppression remain later work.
+M0 boundaries and contracts are compilable. Offline M1 now covers empty/occupied captures, spectral views, deltas, tonal/hum diagnostics, presenter-margin and HPF/gain-risk advice, averaged pink-noise PA/room transfer analysis, relative mic calibration, operator-applied EQ verification, conservative recommendations, atomic JSON, a v1 golden schema fixture, and Markdown. Live capture, transport, DSP, and feedback suppression remain later work.
 

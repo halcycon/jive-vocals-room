@@ -2,6 +2,7 @@ package room
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"sort"
 )
@@ -50,18 +51,119 @@ func AnalysePresenter(speech, noise Measurement) PresenterTest {
 	margins := make([]SpectralPoint, min(len(speech.LegacyBands), len(noise.LegacyBands)))
 	var presenceSum float64
 	var presenceCount int
+	masked := []SpectralPoint{}
 	for i := range margins {
 		margins[i] = SpectralPoint{FrequencyHz: speech.LegacyBands[i].FrequencyHz, LevelDB: speech.LegacyBands[i].LevelDB - noise.LegacyBands[i].LevelDB}
 		if margins[i].FrequencyHz >= 1500 && margins[i].FrequencyHz <= 4000 {
 			presenceSum += margins[i].LevelDB
 			presenceCount++
 		}
+		if margins[i].LevelDB < maskingMarginDB {
+			masked = append(masked, margins[i])
+		}
 	}
 	presence := 0.0
 	if presenceCount > 0 {
 		presence = presenceSum / float64(presenceCount)
 	}
-	return PresenterTest{OverallMarginDB: speech.BroadbandRMSDB - noise.BroadbandRMSDB, BandMargins: margins, PresenceMarginDB: presence}
+	overall := speech.BroadbandRMSDB - noise.BroadbandRMSDB
+	lowMid := strongestExcess(speech.LegacyBands, 125, 440)
+	excess := 0.0
+	if len(speech.LegacyBands) > 0 {
+		excess = lowMid.LevelDB - medianLevels(speech.LegacyBands)
+	}
+	return PresenterTest{
+		OverallMarginDB:  overall,
+		BandMargins:      margins,
+		PresenceMarginDB: presence,
+		LowMidExcessDB:   excess,
+		MaskedBands:      masked,
+		GainAdvice:       gainAdvice(overall, presence, nil),
+		Speech:           speech,
+	}
+}
+
+const (
+	maskingMarginDB    = 6.0
+	presenceAdequateDB = 12.0
+	overallAdequateDB  = 10.0
+	GainAdviceMayHelp  = "more_gain_may_help"
+	GainAdviceRisky    = "more_gain_likely_risky"
+	GainAdviceAdequate = "gain_adequate"
+)
+
+func gainAdvice(overall, presence float64, pa *PAResponse) string {
+	if paHasFeedbackRisk(pa) {
+		return GainAdviceRisky
+	}
+	if overall >= overallAdequateDB && presence >= presenceAdequateDB {
+		return GainAdviceAdequate
+	}
+	if overall < overallAdequateDB || presence < presenceAdequateDB {
+		return GainAdviceMayHelp
+	}
+	return GainAdviceAdequate
+}
+
+func paHasFeedbackRisk(pa *PAResponse) bool {
+	if pa == nil {
+		return false
+	}
+	for _, f := range pa.Features {
+		if f.Kind == FeatureNarrowResonance || f.Kind == FeatureCombNotch {
+			return true
+		}
+	}
+	return false
+}
+
+func RecommendSession(s Session) []Recommendation {
+	recs := Recommend(s.EmptyRoom, s.OccupiedRoom, s.PARoom, s.Mixer)
+	if s.Presenter != nil {
+		s.Presenter.GainAdvice = gainAdvice(s.Presenter.OverallMarginDB, s.Presenter.PresenceMarginDB, s.PARoom)
+		recs = append(recs, recommendPresenter(*s.Presenter, s.Mixer)...)
+	}
+	return recs
+}
+
+func recommendPresenter(p PresenterTest, mixer MixerCapability) []Recommendation {
+	recs := []Recommendation{}
+	if mixer.HasHighPass && presenterNeedsHPF(p.Speech) {
+		hz := 80.0
+		if len(mixer.HighPassChoicesHz) > 0 {
+			hz = mixer.HighPassChoicesHz[0]
+		}
+		recs = append(recs, Recommendation{Kind: "hpf", FrequencyHz: hz, Evidence: "presenter low-band energy", Reason: fmt.Sprintf("Enable a high-pass around %.0f Hz if the mixer has one. It is a starting point to reduce rumble without pretending to flatten the room.", hz), Confidence: 0.7, StartingPoint: true})
+	}
+	if p.LowMidExcessDB > 4 && len(p.Speech.LegacyBands) > 0 {
+		low := strongestExcess(p.Speech.LegacyBands, 125, 440)
+		freq, minGainDB, maxGainDB := nearestMixerControl(low.FrequencyHz, mixer)
+		if freq > 0 {
+			gain := -min(3, p.LowMidExcessDB)
+			gain = min(max(gain, minGainDB), min(0, maxGainDB))
+			if gain < 0 {
+				recs = append(recs, Recommendation{Kind: "eq_cut", FrequencyHz: freq, GainDB: gain, Q: 1, Evidence: "presenter low/low-mid excess", Reason: "Presenter low/low-mid energy is elevated relative to the speech-band median. Try a small cut and verify by listening.", Confidence: 0.6, StartingPoint: true})
+			}
+		}
+	}
+	if len(p.MaskedBands) > 0 {
+		recs = append(recs, Recommendation{Kind: "warning", Evidence: "band-wise speech/noise margin", Reason: "One or more bands have less than 6 dB estimated speech margin. Static EQ cannot remove the masking noise; check microphone placement and occupied-room level.", Confidence: 0.75, StartingPoint: true})
+	}
+	switch p.GainAdvice {
+	case GainAdviceRisky:
+		recs = append(recs, Recommendation{Kind: "warning", Evidence: p.GainAdvice, Reason: "Raising master gain is likely risky: a PA resonance or comb feature is already present, or the closed loop would move closer to feedback. Do not add automatic makeup gain.", Confidence: 0.7, StartingPoint: true})
+	case GainAdviceMayHelp:
+		recs = append(recs, Recommendation{Kind: "warning", Evidence: p.GainAdvice, Reason: "Speech margin is modest. A little more acoustic level might help intelligibility, but jive-room will not raise master gain. Increase level only by ear and stop at the first hint of ring.", Confidence: 0.55, StartingPoint: true})
+	}
+	return recs
+}
+
+func presenterNeedsHPF(speech Measurement) bool {
+	if len(speech.LegacyBands) == 0 {
+		return false
+	}
+	low := strongestExcess(speech.LegacyBands, 80, 125)
+	return low.LevelDB > medianLevels(speech.LegacyBands)+3
 }
 
 func Recommend(empty Measurement, occupied *Measurement, pa *PAResponse, mixer MixerCapability) []Recommendation {

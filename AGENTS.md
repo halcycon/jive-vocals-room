@@ -153,11 +153,7 @@ Done. Keep the generator offline-only. When tightening classification, preserve 
 
 #### 2. Finish the guided offline M1 experience
 
-- Add explicit wizard stages and validation for recommended 10–20 second captures.
-- Add microphone calibration-curve ingestion without implying an uncalibrated microphone measures SPL.
-- Improve presenter guidance: HPF recommendation, excessive low/low-mid energy, band-wise masking, and whether more gain is likely useful versus risky.
-- Add operator-applied EQ and verification comparison to report whether the measured problem improved.
-- Add schema golden tests and a reader that rejects unsupported major versions clearly.
+Done for the file-based path: capture-duration notes for the 10–20 s window, relative microphone calibration-curve ingestion (`spl_calibrated` remains false), presenter HPF / low-mid / masking / master-gain-risk advice, operator-applied EQ plus verification comparison, `ReadJSON` rejection of unsupported major versions, and a v1 golden schema fixture. Remaining UX work is an interactive wizard TUI rather than more CLI flags.
 
 #### 3. M2 live analyser, read-only
 
