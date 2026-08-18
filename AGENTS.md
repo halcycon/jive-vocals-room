@@ -1,6 +1,195 @@
 # AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to coding agents working in this repository.
+
+## Cursor handover: room calibration and live DSP fork
+
+### Mission and source specification
+
+This working tree is being turned into a fork of `linuxmatters/jive-vocals` for an approachable room/PA sound-check assistant and, later, a measurable low-latency Linux DSP engine. Read [`CODEX_TASK_JIVE_ROOM_LIVE_DSP.md`](CODEX_TASK_JIVE_ROOM_LIVE_DSP.md) in full before continuing. It is the authoritative product and milestone specification.
+
+The core product distinction must remain explicit:
+
+- ambient room noise, including HVAC, hum, fans, and audience chatter;
+- the loudspeaker plus room transfer response to a known signal;
+- speech-to-noise and frequency-dependent masking;
+- acoustic feedback caused by a closed microphone/loudspeaker loop.
+
+Do not claim these are interchangeable. Static EQ cannot remove audience chatter, deep room nulls must not be blindly boosted, and tonal noise is diagnostic evidence rather than something to hide automatically. All recommendations are bounded, explainable starting points that require listening and verification.
+
+### Repository and Git state at handover
+
+- Upstream source was fetched from `https://github.com/linuxmatters/jive-vocals.git` at commit `d1c9315540d271bf82d012fae39816f1d66544a1`.
+- Current local branch: `feature/room-live-dsp-foundation`, tracking `upstream/main`.
+- Only an `upstream` remote is configured. It points to `linuxmatters/jive-vocals` for fetch and push. **Do not push to it.**
+- GitHub SSH authentication works as user `halcycon` (`ssh -T git@github.com` succeeded).
+- Neither `halcycon/jive-vocals` nor `halcycon/jive-talking` existed when checked. No fork/origin was created.
+- The GitHub CLI account token was invalid. An attempted device authorization was cancelled at the user's request.
+- Nothing from this room-DSP work has been committed or pushed. The intended scope is all files listed below, including this handover and the task specification. Inspect before staging.
+- The `ffmpeg-statigo` submodule is initialized at the upstream-pinned commit and its `lib/linux_amd64/libffmpeg.a` dependency has been downloaded. The submodule itself is clean.
+
+Current expected worktree changes:
+
+```text
+M  AGENTS.md
+M  justfile
+?? CODEX_TASK_JIVE_ROOM_LIVE_DSP.md
+?? cmd/jive-room/
+?? docs/Room-Live-DSP-Architecture.md
+?? docs/adr/
+?? internal/live/
+?? internal/room/
+?? internal/roomfile/
+```
+
+Before publishing, create the user's GitHub fork through an authenticated browser/API, add it as SSH remote `origin`, verify its URL, then commit conventionally and push only to `origin`. A suitable first commit is `feat: add room DSP foundation and offline analyser`. Do not open a PR against `linuxmatters/jive-vocals`.
+
+### Implemented foundation (M0)
+
+The new feature is deliberately additive. Do not refactor the existing podcast pipeline to make room work easier.
+
+- [`docs/Room-Live-DSP-Architecture.md`](docs/Room-Live-DSP-Architecture.md) records product boundaries, package ownership, real-time rules, safety limits, the latency budget, test strategy, command naming, and current milestone status.
+- [`docs/adr/0001-native-pipewire-c-engine.md`](docs/adr/0001-native-pipewire-c-engine.md) accepts native synchronous PipeWire plus a C real-time engine and Go control plane. FFmpeg is not the live transport.
+- [`docs/adr/0002-pa-test-signal.md`](docs/adr/0002-pa-test-signal.md) selects averaged, band-limited pink noise for the first PA/room measurement. A logarithmic sweep is deferred but remains a future compatible method.
+- [`internal/live/control.go`](internal/live/control.go) contains compile-time-only control-plane types and `Engine`/`InputAnalyser` interfaces. There is no live engine yet.
+- [`cmd/jive-room`](cmd/jive-room) is the additive command name. `cmd/jive-vocals` and its behavior were not changed.
+- `just build-room` builds the new binary; `just clean` now removes it.
+
+Real-time invariants are non-negotiable: the eventual callback must not allocate/free, log, perform I/O, block, take normal mutexes, invoke Go, run FFTs, or execute FFmpeg graphs. C owns PipeWire, the callback, preallocated channel/filter state, dynamic notch slots, atomic coefficient-bank handoff, sample counters, and fixed telemetry. Go owns the wizard, profiles, slow FFT analysis, recommendations, persistence, and UI. The analyser is a lock-free side tap, never a buffering insert.
+
+### Implemented offline vertical slice (thin M1)
+
+[`internal/room`](internal/room) is a pure-Go, non-real-time domain and analysis package:
+
+- versioned canonical session schema `jive-room-session/v1`;
+- venue, device, channel map, microphone/calibration metadata fields;
+- empty and occupied room measurements;
+- PA response, presenter, mixer, suggested/applied EQ, and verification fields;
+- atomic JSON persistence using temp file, sync, close, and rename;
+- objective Markdown report rendering;
+- interleaved mono/stereo-or-more PCM downmix;
+- 8192-point Hann-windowed radix-2 FFT with 50% overlap;
+- fine 1/24-octave display spectrum;
+- Jive/`afftdn`-compatible 15-band view at `80, 125, 195, 290, 440, 660, 1000, 1500, 2250, 3350, 5000, 7500, 11200, 16000, 24000 Hz`, using geometric edges;
+- broadband RMS and sample peak in dBFS;
+- spectral flatness;
+- narrow peak prominence and cross-frame persistence;
+- likely 50 Hz or 60 Hz hum series when at least two harmonics persist;
+- empty-versus-occupied broadband and band deltas;
+- presenter overall, per-band, and 1.5–4 kHz presence-margin estimates on one consistent FFT/dBFS axis;
+- conservative low/low-mid cut advice, hum investigation advice, and occupied-noise masking warnings;
+- no automatic boost recommendations;
+- mixer models and constructors for fixed 3-band, semi-parametric 4-band, N-band graphic, and fully parametric EQ;
+- recommendation frequencies and gains constrained to represented mixer controls.
+
+[`internal/roomfile`](internal/roomfile) adapts the existing embedded FFmpeg decoder into pure interleaved `room.PCM`. It supports decoded S16, float32, S32, and float64, planar or interleaved, so WAV and FLAC go through the same file boundary. This is non-real-time code and may allocate.
+
+[`cmd/jive-room/main.go`](cmd/jive-room/main.go) currently accepts:
+
+```text
+-empty     required 10–20 second empty-room WAV/FLAC
+-occupied  optional occupied-room WAV/FLAC
+-presenter optional presenter-test WAV/FLAC
+-venue     optional room label
+-out       JSON destination, default jive-room-session.json
+```
+
+It emits versioned JSON and a sibling Markdown report. The persisted PA response explicitly says `pink_noise_averaging` / `not_measured`; it does not pretend Stage 3 exists.
+
+### Verification already completed
+
+These checks passed after the last source change:
+
+```text
+env XDG_RUNTIME_DIR=/tmp/jive-room-runtime \
+    GOCACHE=/tmp/jive-room-go-cache \
+    GOMODCACHE=/tmp/jive-room-mod-cache \
+    just test
+
+env GOCACHE=/tmp/jive-room-go-cache \
+    GOMODCACHE=/tmp/jive-room-mod-cache \
+    go vet ./...
+
+just build
+just build-room
+git diff --check
+```
+
+All existing upstream Go tests and the new tests passed. New deterministic coverage includes synthetic 50/100 Hz hum, 15 legacy bands, fine-band presence, a 20 dB occupied delta, conservative mixer mapping, presenter margin, all four mixer representations, versioned JSON round-trip/rejection, and actual embedded-FFmpeg decoding of a generated PCM16 WAV.
+
+`just lint` could not start because `gocyclo` was not installed, and `nix` was not available in this environment. `ineffassign`, `golangci-lint`, and `actionlint` were also absent. Do not report lint as passing. Install the repository's development tooling and run `just lint` before review. Build artifacts were removed with `just clean`.
+
+### Known limitations and review targets
+
+- The FFT implementation is intentionally simple and allocates; that is valid for offline M1 but it must never migrate into the RT callback.
+- Fine spectrum levels are internally consistent relative power values. They are not microphone-calibrated SPL and must not be labelled dB SPL.
+- Presenter margin uses separate capture spectra, not simultaneous speech/noise separation. The report/UI must describe it as an estimate.
+- Tonal thresholds (`8 dB` local prominence, `>= 0.5` frame persistence, `±4 Hz` hum matching) are named but only synthetic-test justified. Validate against recorded room, speech, and music fixtures before treating confidence as calibrated.
+- The current recommendation engine only demonstrates hum investigation, occupied masking warning, and one broad low/low-mid cut. It does not yet reason over PA transfer response, nulls, feedback, HPF choice, or total multi-filter correction.
+- JSON schema is versioned but has no golden full-session fixture or migration reader yet. Add a golden schema compatibility test before broad distribution.
+- Markdown is useful but minimal. Preserve objective language and distinguish measured facts from advice.
+- FLAC uses the same FFmpeg path but only WAV has a generated integration test so far.
+- No CLI end-to-end golden test currently asserts both emitted files.
+- No commits exist. Re-run tests after any review fixes and before the initial commit.
+
+### Next implementation sequence
+
+Proceed milestone by milestone; do not jump directly into automatic feedback suppression.
+
+#### 1. Complete Stage 3 offline PA/room response
+
+Implement this next:
+
+1. Add a deterministic, band-limited pink-noise generator with explicit sample rate, duration, level/headroom, fade-in/out, seed, and WAV output. Never initiate playback or raise PA gain automatically.
+2. Define reference and recorded-capture inputs in `PAResponse`. Record generator settings and capture metadata in the versioned schema.
+3. Analyse reference and measurement with matching FFT/window configuration. Compute transfer magnitude by power or amplitude ratio with an explicit epsilon/floor; never subtract unrelated axes.
+4. Average over time, aggregate/smooth logarithmically (start around 1/6 octave for practical advice), and retain fine bins internally for narrow-peak/null classification.
+5. Classify broad excesses, narrow resonances, and deep/narrow nulls. Deep nulls and comb notches must become `do_not_boost` diagnostics.
+6. Generate conservative corrections: cuts before boosts, broad before narrow, maximum +3 dB boost, bounded cut depth, bounded total correction, and no automatic master-gain increase. Every recommendation carries evidence, reason, confidence, and `starting_point=true`.
+7. Solve corrections through the selected mixer model rather than returning unavailable frequencies.
+8. Add deterministic synthetic transfer-function tests, including broad +6 dB excess, narrow resonance, deep null, comb-filter-like notches, noise contamination, mismatched sample rate rejection, and boost/total-gain bounds.
+9. Extend JSON and Markdown output, then add a CLI end-to-end test.
+
+Prefer extracting reusable spectral primitives from `analyser.go` carefully rather than creating two competing FFT implementations. Keep package interfaces small; likely types are `TestSignalSpec`, `ResponseAnalysisConfig`, and `AnalysePAResponse(reference PCM, measured PCM, config)`. Do not expose internal FFT details unless a caller genuinely needs them.
+
+#### 2. Finish the guided offline M1 experience
+
+- Add explicit wizard stages and validation for recommended 10–20 second captures.
+- Add microphone calibration-curve ingestion without implying an uncalibrated microphone measures SPL.
+- Improve presenter guidance: HPF recommendation, excessive low/low-mid energy, band-wise masking, and whether more gain is likely useful versus risky.
+- Add operator-applied EQ and verification comparison to report whether the measured problem improved.
+- Add schema golden tests and a reader that rejects unsupported major versions clearly.
+
+#### 3. M2 live analyser, read-only
+
+- Confirm installed PipeWire development version/API before coding.
+- Build native PipeWire input capture with a C RT callback and fixed SPSC analysis ring.
+- Consume the ring off-thread for rolling levels/spectrum/tonality only; no output processing.
+- Report negotiated sample rate and graph quantum honestly. Show overruns/dropped analysis frames separately from audio xruns.
+- Keep live hardware tests tagged/optional and supply a fake/offline ring harness for CI.
+
+#### 4. M3 pass-through and manual EQ
+
+- Implement the C DSP core first with an offline harness: stable RBJ-style HPF/LPF/peaking/notch biquads, per-channel state, parameter validation, hard bypass equivalence, denormal policy, and click-free bank updates.
+- Add synchronous native PipeWire filter input/output only after the core passes deterministic impulse and frequency-response tests.
+- Add atomic last-known-good configuration, fail-to-bypass behavior, xrun/CPU/sample telemetry, and measured loopback latency tooling.
+- Target 48 kHz and below 10 ms practical round trip, with below 5 ms only as a stretch. Report measurements, never assumptions.
+
+#### 5. M4 feedback work
+
+Start with operator-controlled ring-out. Never raise PA gain in software. Candidate detection must combine local prominence, persistence, growth, Q/bandwidth, frequency stability, harmonic context, and speech/music false-positive controls. Fixed notches require operator confirmation. Experimental dynamic notches remain disabled by default, preallocated, shallow-first, depth-limited, held, slowly released, smoothed, and fully diagnosed. Adaptive feedback cancellation remains research-only until M1–M5 are stable.
+
+### Working rules specific to this fork
+
+- Preserve every existing `jive-vocals` behavior and test unless the user explicitly authorizes a change.
+- Do not route live audio through FFmpeg or call Go from a PipeWire callback.
+- Do not use words such as “zero latency,” “room noise removed by EQ,” or “flat room” as unsupported claims.
+- Keep all bounds and units in names or JSON keys.
+- Never store non-finite floats in canonical JSON; sanitize or represent absence explicitly.
+- Never auto-increase master gain. Keep automatic actions bounded, explainable, reversible, and visible.
+- Prefer cuts, refuse deep-null inversion, preserve headroom, and require verification measurements.
+- Run `just test`, `just lint`, `just build`, `just build-room`, and C/offline DSP tests as applicable before committing.
+- Use Conventional Commits. Push only to the user's fork, never upstream.
 
 ## Project overview
 

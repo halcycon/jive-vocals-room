@@ -82,9 +82,14 @@ build: _check-submodule
     echo "Building jive-vocals version: $VERSION"
     CGO_ENABLED=1 go build -ldflags="-X main.version=$VERSION" -o jive-vocals ./cmd/jive-vocals
 
+# Build the additive offline room-calibration command
+build-room: _check-submodule
+    CGO_ENABLED=1 go build -o jive-room ./cmd/jive-room
+
 # Clean build artifacts and generated reports/data (.log, .json run-records, .jsonl sidecars)
 clean:
     @rm -fv jive-vocals 2>/dev/null || true
+    @rm -fv jive-room 2>/dev/null || true
     @rm -fv testdata/*-processed.* 2>/dev/null || true
     @rm -fv testdata/*-analysis.* 2>/dev/null || true
     @rm -fv testdata/LMP-*-stashed.* 2>/dev/null || true

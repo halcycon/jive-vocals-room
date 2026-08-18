@@ -1,5 +1,6 @@
 .direnv
 /jive-vocals
+/jive-room
 jive-vocals-debug.log
 testdata/
 .bench/
