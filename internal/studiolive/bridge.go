@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strings"
 	"time"
 
 	"github.com/linuxmatters/jive-vocals/internal/osc"
@@ -22,8 +23,8 @@ const (
 )
 
 // BridgeClient is a read-only subscriber to the bridge's mixer-state stream.
-// It sends only /dsp/subscribe and /dsp/unsubscribe; it has no path to emit
-// /channel/... writes.
+// It sends only /dsp/subscribe, /dsp/unsubscribe, and /dsp/ui/... display
+// values; it has no path to emit /channel/... writes.
 type BridgeClient struct {
 	conn   *net.UDPConn
 	bridge *net.UDPAddr
@@ -50,6 +51,18 @@ func (c *BridgeClient) send(addr string, args ...any) error {
 	}
 	_, err = c.conn.WriteToUDP(b, c.bridge)
 	return err
+}
+
+// UIPrefix is the only namespace PublishUI accepts; the bridge forwards it to
+// Open Stage Control and nowhere else.
+const UIPrefix = "/dsp/ui/"
+
+// PublishUI sends a display value to Open Stage Control through the bridge.
+func (c *BridgeClient) PublishUI(addr string, args ...any) error {
+	if !strings.HasPrefix(addr, UIPrefix) || len(addr) == len(UIPrefix) {
+		return fmt.Errorf("refusing to publish %q: only %s... display addresses are allowed", addr, UIPrefix)
+	}
+	return c.send(addr, args...)
 }
 
 func (c *BridgeClient) port() int {

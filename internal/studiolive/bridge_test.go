@@ -3,6 +3,7 @@ package studiolive
 import (
 	"context"
 	"net"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -130,12 +131,21 @@ func TestBridgeClientSubscribesReadsAndNeverWrites(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	for _, a := range fb.addresses() {
-		if !strings.HasPrefix(a, "/dsp/subscribe") && a != "/dsp/unsubscribe" {
-			t.Fatalf("client sent %q; it must only subscribe/unsubscribe", a)
+	for _, bad := range []string{"/channel/ch1/mute", "/dsp/apply", "/dsp/ui/", "/dsp/uix"} {
+		if err := c.PublishUI(bad, "x"); err == nil {
+			t.Fatalf("PublishUI accepted %q", bad)
 		}
 	}
-	if a := fb.addresses(); a[len(a)-1] != "/dsp/unsubscribe" {
-		t.Fatalf("no unsubscribe on exit: %v", a)
+	if err := c.PublishUI("/dsp/ui/ringout/status", "ok"); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(50 * time.Millisecond)
+	for _, a := range fb.addresses() {
+		if !strings.HasPrefix(a, "/dsp/subscribe") && a != "/dsp/unsubscribe" && !strings.HasPrefix(a, UIPrefix) {
+			t.Fatalf("client sent %q; it must only subscribe/unsubscribe/publish UI", a)
+		}
+	}
+	if a := fb.addresses(); !slices.Contains(a, "/dsp/unsubscribe") || !slices.Contains(a, "/dsp/ui/ringout/status") {
+		t.Fatalf("missing unsubscribe or UI publish: %v", a)
 	}
 }

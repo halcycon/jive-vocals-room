@@ -61,6 +61,10 @@ func spectra(s []float64) [][]float64 {
 	return out
 }
 
+// FFT is the in-place radix-2 transform used by the offline analyser.
+// len(x) must be a power of two. Not for real-time callbacks.
+func FFT(x []complex128) { fft(x) }
+
 func fft(x []complex128) {
 	for i, j := 1, 0; i < len(x); i++ {
 		bit := len(x) >> 1

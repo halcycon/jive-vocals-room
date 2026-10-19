@@ -3,10 +3,11 @@
 # Install integrations/studiolive/bridge/osc_tcp1_bridge_jack.py on the
 # StudioLive Mac mini and restart studiolive-bridge.
 #
-# The mixer user has no passwordless sudo, so the restart is triggered by
-# SIGKILL plus the unit's Restart=on-failure. systemd 255 propagates that
-# restart to studiolive-osc (Requires=), so Open Stage Control restarts too
-# and connected browsers reconnect. Do not run during a show.
+# Restart uses `sudo -n systemctl restart studiolive-bridge.service` when the
+# integrations/studiolive/sudoers/studiolive-dsp rule is installed, otherwise
+# SIGKILL plus the unit's Restart=on-failure. Either way systemd propagates the
+# restart to studiolive-osc (Requires=), so Open Stage Control restarts too and
+# connected browsers reconnect. Do not run during a show.
 #
 # Usage: ./scripts/deploy-studiolive-bridge.sh [user@host]
 #
@@ -29,7 +30,12 @@ fi
 cp osc_tcp1_bridge_jack.py "osc_tcp1_bridge_jack.py.bak-$(date +%Y%m%d-%H%M%S)"
 mv osc_tcp1_bridge_jack.py.new osc_tcp1_bridge_jack.py
 OLD=$(systemctl show studiolive-bridge -p MainPID --value)
-kill -KILL "$OLD"
+if sudo -n /usr/bin/systemctl restart studiolive-bridge.service 2>/dev/null; then
+	echo "restarted with sudo systemctl"
+else
+	echo "no sudoers rule; restarting via SIGKILL and Restart=on-failure"
+	kill -KILL "$OLD"
+fi
 for _ in $(seq 1 30); do
 	sleep 1
 	NEW=$(systemctl show studiolive-bridge -p MainPID --value)

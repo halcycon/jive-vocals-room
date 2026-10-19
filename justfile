@@ -110,6 +110,10 @@ deploy-studiolive host="mixer@studiolive":
 deploy-studiolive-bridge host="mixer@studiolive":
     ./scripts/deploy-studiolive-bridge.sh {{host}}
 
+# Regenerate and install the Open Stage Control session with the ROOM tab (restarts Open Stage Control)
+deploy-studiolive-osc host="mixer@studiolive":
+    ./scripts/deploy-studiolive-osc.sh {{host}}
+
 # Offline C ring harness (no PipeWire)
 test-rt:
     gcc -std=c11 -O2 -Wall -Wextra -o /tmp/jive-rt-ring-test internal/live/rt/ring.c internal/live/rt/harness/main.c

@@ -171,6 +171,31 @@ jive-room -studiolive-watch                         # print each control change 
 
 Frequencies and gains come from a model built from the Open Stage Control knob labels (log frequency, linear ±15 dB gain). They have not yet been checked against the desk, and the raw 8-bit value is always shown alongside. GEQ bands are shown as raw steps from flat because their dB size is not yet known.
 
+### Ringing out a channel (StudioLive)
+
+```bash
+jive-room -studiolive-ringout -studiolive-channel 3   # live, read-only; also feeds the ROOM tab
+jive-room -ringout-file ringout-take.wav              # same detector over a recording
+```
+
+The assistant listens to one channel over JACK, flags ringing candidates and proposes cuts. It never plays audio, changes gain or writes to the desk. **You** raise gain slowly on the desk and stop as soon as anything rings.
+
+A candidate needs all of the following:
+- It sits at least 15 dB above its ±1/6-octave neighbourhood.
+- It is louder than −70 dBFS, which rules out converter idle tones.
+- It lasts at least 0.5 s and is present in at least 80% of frames.
+- Its frequency holds to within 0.2%, which rules out gliding speech.
+
+Growth of 3 dB/s or more raises confidence. Peaks related to others by an integer ratio (a voice or an instrument) are shown as `harmonic, likely source` with low confidence and no proposal. These thresholds are justified only by synthetic signals so far. Treat confidence as a ranking, not a probability, until they have been checked against real ring-outs.
+
+For each ring the assistant proposes two options; choose one:
+- **Main GEQ:** the nearest of the 31 bands, −3 dB. No raw desk value is proposed, because the GEQ's dB-per-step is not yet calibrated. If the GEQ is switched off, the proposal says so.
+- **Channel mid EQ,** for rings between 260 Hz and 3.5 kHz: Hi-Q on, centred on the ring, −3 dB below the current mid gain, never below −6 dB. Raw values come from the unverified knob-label model. The proposal warns if the mid band is already in use elsewhere, and notes that with a pre-DSP FireWire send the cut will not show in this channel's capture.
+
+Re-test after each cut. If a ring keeps coming back after one or two cuts, pull gain back instead of cutting deeper.
+
+The **ROOM** tab in Open Stage Control shows the same status, candidates and proposals. Its widgets are display-only and never send OSC.
+
 `-studiolive-channel` maps desk channels 1–8 to FireWire streams 1–8, and stereo channels 9–12 to stream pairs 9/10, 11/12, 13/14 and 15/16. That mapping follows osclive's meter layout and has **not yet been verified with signal on the hardware**. To check it, play a source into one side of stereo channel 10 and confirm that `-jack-source '_Ch 11_in'` or `'_Ch 12_in'` moves. The `xruns` count covers the whole JACK graph, not just this client. Over SSH the client runs without real-time priority, as the bridge-launched RTA already does. A 60-second soak at 44.1 kHz with 1024-frame periods showed no xruns.
 
 ### When to stop adjusting a band

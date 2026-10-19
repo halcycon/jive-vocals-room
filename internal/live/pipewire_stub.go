@@ -2,7 +2,7 @@
 
 package live
 
-func openPipeWire() (InputAnalyser, error) {
+func openPipeWire(InputOptions) (InputAnalyser, error) {
 	return nil, ErrPipeWireDisabled
 }
 

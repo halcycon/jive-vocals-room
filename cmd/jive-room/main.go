@@ -55,6 +55,8 @@ func run(args []string) error {
 	mixerState := fs.Bool("studiolive-state", false, "print StudioLive HPF/EQ/GEQ state read from the bridge (read-only), then exit")
 	mixerWatch := fs.Bool("studiolive-watch", false, "stream StudioLive control changes read from the bridge (read-only) until Ctrl+C")
 	bridgeAddr := fs.String("studiolive-bridge", studiolive.DefaultBridgeAddr, "bridge DSP state address")
+	ringOut := fs.Bool("studiolive-ringout", false, "read-only ring-out assistant on -studiolive-channel over JACK; proposes bounded cuts, never writes")
+	ringOutFile := fs.String("ringout-file", "", "run the ring-out detector over a WAV/FLAC recording and print candidates (offline)")
 	venue := fs.String("venue", "", "venue or room label")
 	out := fs.String("out", "jive-room-session.json", "session JSON path")
 	pink := room.DefaultPinkSpec()
@@ -79,6 +81,16 @@ func run(args []string) error {
 	}
 	if *mixerState || *mixerWatch {
 		return runMixerState(*bridgeAddr, *studioLiveChannel, *mixerWatch)
+	}
+	if *ringOutFile != "" {
+		return runRingOutFile(os.Stdout, *ringOutFile)
+	}
+	if *ringOut {
+		opts, err := liveOptions(string(live.BackendJACK), jackSources, *studioLiveChannel, *jackClient)
+		if err != nil {
+			return usageError{err}
+		}
+		return runRingOutLive(opts, *studioLiveChannel, *bridgeAddr)
 	}
 	if *studioLiveChannel != 0 || len(jackSources) > 0 {
 		*liveInput = true

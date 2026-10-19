@@ -124,6 +124,42 @@ func TestRingAnalyserStereoAt44100(t *testing.T) {
 	}
 }
 
+func TestRingAnalyserSampleTapReceivesEachNewFrameOnce(t *testing.T) {
+	ring, err := rt.NewRing(DefaultRingFrames, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []float64
+	a := newRingAnalyser(&fakeSource{ring: ring}, "fake").withTap(func(m []float64, r int) {
+		if r != 44100 {
+			t.Errorf("rate %d", r)
+		}
+		got = append(got, m...)
+	})
+	var acc []float64
+	for chunk := range 3 {
+		buf := make([]float32, 2*1000)
+		for i := range 1000 {
+			buf[2*i], buf[2*i+1] = float32(chunk), float32(chunk)+1
+		}
+		ring.Write(buf)
+		a.snapshot(&acc)
+	}
+	if len(got) != 3000 || got[0] != 0.5 || got[2999] != 2.5 {
+		t.Fatalf("tap got %d samples, first %.1f last %.1f", len(got), got[0], got[len(got)-1])
+	}
+}
+
+func TestRingAnalyserEarlySnapshotHasNoLevel(t *testing.T) {
+	s := feedSnapshots(t, 1, 4096, func(int) float64 { return 0.1 })
+	if s.HasSpectrum || !math.IsInf(s.RMSDB, -1) || !math.IsInf(s.PeakDB, -1) {
+		t.Fatalf("partial window reported levels: rms %v peak %v", s.RMSDB, s.PeakDB)
+	}
+	if line := FormatPlainLine(s); !strings.Contains(line, "rms=n/a") {
+		t.Fatalf("plain line %q", line)
+	}
+}
+
 func TestRingAnalyserNoiseFloorIsNotTonal(t *testing.T) {
 	rng := rand.New(rand.NewPCG(1, 2)) //nolint:gosec // deterministic test noise
 	s := feedSnapshots(t, 1, 2*liveWindowFrames, func(int) float64 {

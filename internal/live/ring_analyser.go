@@ -2,6 +2,7 @@ package live
 
 import (
 	"context"
+	"math"
 	"sync"
 	"time"
 
@@ -34,12 +35,18 @@ type captureSource interface {
 type ringAnalyser struct {
 	src    captureSource
 	label  string
+	tap    func(mono []float64, rateHz int)
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 }
 
 func newRingAnalyser(src captureSource, label string) *ringAnalyser {
 	return &ringAnalyser{src: src, label: label}
+}
+
+func (a *ringAnalyser) withTap(tap func([]float64, int)) *ringAnalyser {
+	a.tap = tap
+	return a
 }
 
 func (a *ringAnalyser) Start(ctx context.Context, cb func(Snapshot)) error {
@@ -71,11 +78,15 @@ func (a *ringAnalyser) consume(ctx context.Context, cb func(Snapshot)) {
 }
 
 func (a *ringAnalyser) snapshot(acc *[]float64) Snapshot {
+	before := len(*acc)
 	overruns := DrainRing(a.src.Ring(), acc)
 	rate := a.src.Rate()
 	ch := a.src.Channels()
 	if ch <= 0 {
 		ch = a.src.Ring().Channels()
+	}
+	if a.tap != nil && rate > 0 && len(*acc) > before {
+		a.tap(downmixInterleaved((*acc)[before:], ch), rate)
 	}
 	tel := Telemetry{
 		QuantumFrames:    a.src.Quantum(),
@@ -88,11 +99,26 @@ func (a *ringAnalyser) snapshot(acc *[]float64) Snapshot {
 	}
 	need := liveWindowSamples(ch)
 	if len(*acc) < need || rate <= 0 {
-		return Snapshot{Telemetry: tel}
+		return Snapshot{Telemetry: tel, RMSDB: math.Inf(-1), PeakDB: math.Inf(-1)}
 	}
 	*acc = (*acc)[len(*acc)-need:]
 	win := append([]float64(nil), *acc...)
 	return SnapshotFromPCM(room.PCM{Samples: win, SampleRate: rate, Channels: ch, Source: a.label}, tel)
+}
+
+func downmixInterleaved(in []float64, channels int) []float64 {
+	if channels <= 1 {
+		return append([]float64(nil), in...)
+	}
+	out := make([]float64, len(in)/channels)
+	for i := range out {
+		var s float64
+		for c := range channels {
+			s += in[i*channels+c]
+		}
+		out[i] = s / float64(channels)
+	}
+	return out
 }
 
 func liveWindowSamples(channels int) int {

@@ -11,6 +11,10 @@
 
 `bridge/` holds the maintained bridge. It is the deployed baseline plus the read-only `/dsp` state port (`127.0.0.1:9002`). Install it with `just deploy-studiolive-bridge`, which restarts the bridge and, through systemd, Open Stage Control. Compare it with `git diff --no-index deployed/osc_tcp1_bridge_jack.py bridge/osc_tcp1_bridge_jack.py`. The mini keeps timestamped `.bak-*` copies, plus `osc_tcp1_bridge_jack.py.orig-20261019` (the pre-change original).
 
+`osc/` holds `add_room_tab.py`, which adds a display-only ROOM tab to the v26 baseline session, and its generated output, `StudioLive1602_OpenStageControl_v27.json`. `just deploy-studiolive-osc` regenerates the session and installs it. Because the unit still loads `..._v26.json`, the mini has `..._v26.json -> ..._v27.json` as a symlink, with the original at `..._v26.json.orig`. The v26 baseline already repeats some widget IDs (`select_ch1`…), and the ROOM tab adds none.
+
+`sudoers/studiolive-dsp` is the narrow passwordless-restart rule for the bridge and Open Stage Control units. It is not installed yet; installing it needs root.
+
 `.reference/` (gitignored) holds a local copy of osclive 0.3.0 for reading only. It is MIT-licensed upstream at [martinspinler/osclive](https://github.com/martinspinler/osclive), commit `1da2ada424f5c16afc64b173bc5dbefcaffccd63`. Refresh it with:
 
 ```bash

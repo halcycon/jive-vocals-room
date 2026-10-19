@@ -35,7 +35,7 @@ func openJACK(opts InputOptions) (InputAnalyser, error) {
 		_ = cap.Close()
 		return nil, err
 	}
-	return newRingAnalyser(&jackSource{Capture: cap, sources: sources}, "jack"), nil
+	return newRingAnalyser(&jackSource{Capture: cap, sources: sources}, "jack").withTap(opts.SampleTap), nil
 }
 
 func JACKBuilt() bool { return true }

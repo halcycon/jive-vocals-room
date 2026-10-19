@@ -24,12 +24,15 @@ type InputOptions struct {
 	Backend        Backend
 	JACKSources    []string
 	JACKClientName string
+	// SampleTap, when set, receives each batch of newly captured frames as
+	// mono samples on the non-real-time consumer goroutine.
+	SampleTap func(mono []float64, rateHz int)
 }
 
 func OpenInputAnalyser(opts InputOptions) (InputAnalyser, error) {
 	switch opts.Backend {
 	case "", BackendPipeWire:
-		return openPipeWire()
+		return openPipeWire(opts)
 	case BackendJACK:
 		if len(opts.JACKSources) == 0 {
 			return nil, fmt.Errorf("jack backend needs at least one source port")
