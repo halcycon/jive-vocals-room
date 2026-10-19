@@ -77,6 +77,10 @@ func (c *Capture) Samples() uint64 {
 	return n
 }
 
+// Healthy reports whether the stream is still usable. PipeWire stream errors
+// are not yet surfaced, so this is true while the capture exists.
+func (c *Capture) Healthy() bool { return c.cap != nil }
+
 func (c *Capture) Close() error {
 	if c.cap != nil {
 		C.jive_pw_capture_destroy(c.cap)

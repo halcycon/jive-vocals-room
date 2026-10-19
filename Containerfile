@@ -16,12 +16,14 @@ RUN dnf -y install --setopt=install_weak_deps=False \
         libstdc++-devel \
         gcc-c++ \
         pipewire-devel \
+        pipewire-jack-audio-connection-kit-devel \
         pkgconf-pkg-config \
     && dnf clean all \
     && go version \
     && pkg-config --exists libpipewire-0.3 \
     && pkg-config --modversion libpipewire-0.3 \
     && pkg-config --cflags --libs libpipewire-0.3 \
+    && pkg-config --modversion jack \
     && just --version
 
 WORKDIR /workspace

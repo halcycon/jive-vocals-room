@@ -286,6 +286,10 @@ func FormatPlainLine(s Snapshot) string {
 	if b, ok := LoudestBand(s.Bands); ok {
 		loud = fmt.Sprintf("%s %s", BandLabel(b.FrequencyHz), formatDB(b.LevelDB))
 	}
-	return fmt.Sprintf("rate=%d Hz  quantum=%d (%.2f ms)  rms=%s  peak=%s  loudest=%s  flatness=%.3f  tone=%.0f Hz / %+.1f dB  hum=%.0f Hz  xruns=%d  analysis_drops=%d  samples=%d",
-		s.SampleRateHz, s.QuantumFrames, qms, formatDB(s.RMSDB), formatDB(s.PeakDB), loud, s.SpectralFlatness, s.TonalHz, s.TonalProminenceDB, s.HumFundamentalHz, s.XRuns, s.AnalysisOverruns, s.ProcessedSamples)
+	engine := "up"
+	if !s.EngineHealthy {
+		engine = "down"
+	}
+	return fmt.Sprintf("rate=%d Hz  quantum=%d (%.2f ms)  rms=%s  peak=%s  loudest=%s  flatness=%.3f  tone=%.0f Hz / %+.1f dB  hum=%.0f Hz  xruns=%d  analysis_drops=%d  samples=%d  engine=%s",
+		s.SampleRateHz, s.QuantumFrames, qms, formatDB(s.RMSDB), formatDB(s.PeakDB), loud, s.SpectralFlatness, s.TonalHz, s.TonalProminenceDB, s.HumFundamentalHz, s.XRuns, s.AnalysisOverruns, s.ProcessedSamples, engine)
 }

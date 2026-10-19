@@ -151,6 +151,8 @@ Implemented as a C SPSC analysis ring plus optional PipeWire input:
 - `internal/live/rt` is RT-safe write / non-RT read. Overruns are analysis drops, counted separately from audio xruns.
 - `internal/live/pipewire` (`//go:build pipewire`) uses a native `pw_stream` input callback that only copies into the ring.
 - `jive-room -live` is a read-only TTY spectrum (or `-live-plain` lines). Rebuild with `just build-room-live` (or `just container build-live`). Operator guide: [`docs/Room-Guide.md`](docs/Room-Guide.md).
+- The live window spans nine overlapping 8192-point frames (about 0.9 s). A single-frame window made tonal persistence trivially 1.0 and reported noise-floor peaks as tones; `TestRingAnalyserNoiseFloorIsNotTonal` guards this.
+- `internal/live/jack` (`//go:build jack`) is the JACK backend (`just build-room-jack`, `just test-jack`). Backends share `ringAnalyser`; select with `OpenInputAnalyser(InputOptions{Backend: …})`.
 - Hardware tests stay skipped unless explicitly enabled; CI uses the fake ring producer and C harness.
 
 #### 4. M3 pass-through and manual EQ
@@ -174,6 +176,8 @@ The first real deployment is a PreSonus StudioLive 16.0.2 behind `mixer@studioli
 - Never automate phantom, routing (`firewire`, `post`, FireWire 15/16 source), mute, solo, `toMain`, faders (`gain`), sends, FX, masters, or `/channel/geq0/reset`.
 - `integrations/studiolive/deployed/` is the deployed baseline; diff changes against it. Do not restart services or change files on the mini without the user's explicit go-ahead.
 - Phase order: read-only JACK analyser plus Ubuntu build image, then read-only mixer state and calibration, then the advance-mode ring-out and room check, then assisted apply with profiles, then live recommendations, and finally guarded automatic cuts (off by default).
+- Phase 1 status: `-tags jack` backend, `-studiolive-channel`, `just build-studiolive` (Ubuntu 24.04 image) and `just deploy-studiolive` (to `~/.local/bin/jive-room` on the mini) work. On the mini: 44.1 kHz, 1024 frames, zero xruns over a 60 s soak. Stereo stream mapping is still unverified because every input was idle. SSH sessions there get no RT priority (PAM limits not applied); a future service should set `LimitRTPRIO`/`LimitMEMLOCK` like `studiolive-jack.service`.
+- The user permits deploying to and running read-only clients on the mini. Still never restart the existing services or edit their files without asking.
 
 ### Working rules specific to this fork
 

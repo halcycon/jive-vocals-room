@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/linuxmatters/jive-vocals/internal/live"
 	"github.com/linuxmatters/jive-vocals/internal/room"
 	"github.com/linuxmatters/jive-vocals/internal/roomfile"
 )
@@ -43,8 +44,13 @@ func run(args []string) error {
 	micIdentity := fs.String("mic-identity", "", "optional measurement-microphone identity")
 	appliedEQ := fs.String("applied-eq", "", "optional operator-applied EQ JSON array")
 	verification := fs.String("verification", "", "optional verification WAV/FLAC captured after applying EQ")
-	liveInput := fs.Bool("live", false, "read-only PipeWire input analyser TUI; never plays audio or raises PA gain")
+	liveInput := fs.Bool("live", false, "read-only live input analyser TUI; never plays audio or raises PA gain")
 	livePlain := fs.Bool("live-plain", false, "with -live, print one status line instead of the spectrum TUI")
+	liveBackend := fs.String("live-backend", string(live.BackendPipeWire), "live capture backend: pipewire or jack")
+	var jackSources stringList
+	fs.Var(&jackSources, "jack-source", "with -live-backend jack, a physical capture port name or unique suffix (repeatable)")
+	studioLiveChannel := fs.Int("studiolive-channel", 0, "StudioLive 16.0.2 input channel 1-12 to analyse over JACK (implies -live -live-backend jack)")
+	jackClient := fs.String("jack-client", live.DefaultJACKClientName, "JACK client name")
 	venue := fs.String("venue", "", "venue or room label")
 	out := fs.String("out", "jive-room-session.json", "session JSON path")
 	pink := room.DefaultPinkSpec()
@@ -67,8 +73,16 @@ func run(args []string) error {
 		fmt.Println("This is a test signal only. Play it through the PA at a safe level you set. jive-room never starts playback or raises PA gain.")
 		return nil
 	}
+	if *studioLiveChannel != 0 || len(jackSources) > 0 {
+		*liveInput = true
+		*liveBackend = string(live.BackendJACK)
+	}
 	if *liveInput {
-		return runLive(*livePlain)
+		opts, err := liveOptions(*liveBackend, jackSources, *studioLiveChannel, *jackClient)
+		if err != nil {
+			return usageError{err}
+		}
+		return runLive(opts, *livePlain)
 	}
 	if *empty == "" {
 		fs.Usage()

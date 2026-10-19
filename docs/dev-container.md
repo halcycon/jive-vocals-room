@@ -13,8 +13,8 @@ PipeWire pkg-config also injects `-fno-strict-overflow`; `just` exports
 ```bash
 just container              # interactive shell in a one-shot container
 just container test         # just test + C ring harness
-just container test-live    # also -tags pipewire
-just container build-live   # jive-room with PipeWire capture
+just container test-live    # also -tags pipewire and -tags jack
+just container build-live   # jive-room with PipeWire capture, then JACK capture
 just container live         # tagged -live, host PipeWire socket bind-mounted
 just container distrobox    # persistent distrobox from the same image
 just container rebuild-image
@@ -32,5 +32,16 @@ headers from this image (or an equivalent host/distrobox install).
 `/tmp` inside the container. Tagged hardware tests still require
 `JIVE_LIVE_PW=1` and are skipped in CI. Distrobox is the better interactive
 path for a full desktop session.
+
+## StudioLive Mac mini image
+
+The Mac mini runs Ubuntu 24.04 (glibc 2.39), which is older than Fedora 44, so its binary is built in a second image, `localhost/jive-room-ubuntu:24.04`, from `Containerfile.ubuntu`. Ubuntu's own Go package is too old for this module, so the image installs the newest stable Go 1.26.x from go.dev.
+
+```bash
+just build-studiolive       # jive-room -tags jack + JACK-tagged tests, in the Ubuntu image
+just deploy-studiolive      # copy to mixer@studiolive:~/.local/bin/jive-room, check ldd there
+```
+
+The deploy script copies the binary and checks that it links. It touches no services.
 
 How to use the analyser and the offline sound-check is in [Room-Guide.md](Room-Guide.md).

@@ -10,7 +10,7 @@ import (
 )
 
 func TestOpenInputAnalyserLinks(t *testing.T) {
-	a, err := OpenInputAnalyser()
+	a, err := OpenInputAnalyser(InputOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -23,7 +23,7 @@ func TestPipeWireHardwareCaptureOptional(t *testing.T) {
 	if os.Getenv("JIVE_LIVE_PW") != "1" {
 		t.Skip("optional PipeWire hardware test; set JIVE_LIVE_PW=1")
 	}
-	a, err := OpenInputAnalyser()
+	a, err := OpenInputAnalyser(InputOptions{Backend: BackendPipeWire})
 	if err != nil {
 		t.Fatal(err)
 	}

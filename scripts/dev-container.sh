@@ -12,6 +12,9 @@
 #   ./scripts/dev-container.sh live         # build tagged binary and run -live (binds host PipeWire socket)
 #   ./scripts/dev-container.sh distrobox    # create/enter a persistent distrobox
 #
+# JIVE_DEV_IMAGE / JIVE_CONTAINERFILE select another image, e.g. the Ubuntu
+# 24.04 StudioLive target (Containerfile.ubuntu); see `just build-studiolive`.
+#
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -19,6 +22,7 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$ROOT_DIR"
 
 IMAGE_NAME="${JIVE_DEV_IMAGE:-localhost/jive-room-dev:latest}"
+CONTAINERFILE="${JIVE_CONTAINERFILE:-Containerfile}"
 CONTAINER_NAME="${JIVE_DEV_CONTAINER:-jive-room-dev}"
 DISTROBOX_NAME="${JIVE_DISTROBOX_NAME:-jive-room-dev}"
 
@@ -45,7 +49,7 @@ fi
 
 build_image() {
 	echo "Building $IMAGE_NAME with $ENGINE (volume label: $volume_desc)"
-	$ENGINE build -t "$IMAGE_NAME" -f "$ROOT_DIR/Containerfile" "$ROOT_DIR"
+	$ENGINE build -t "$IMAGE_NAME" -f "$ROOT_DIR/$CONTAINERFILE" "$ROOT_DIR"
 }
 
 image_exists() {
@@ -113,7 +117,7 @@ test)
 	;;
 test-live)
 	ensure_image
-	run_in_container bash -c 'just test && just test-rt && just test-pipewire'
+	run_in_container bash -c 'just test && just test-rt && just test-pipewire && just test-jack'
 	;;
 build)
 	ensure_image
@@ -121,7 +125,7 @@ build)
 	;;
 build-live)
 	ensure_image
-	run_in_container bash -c 'just build && just build-room && just build-room-live'
+	run_in_container bash -c 'just build && just build-room && just build-room-live && just build-room-jack'
 	;;
 live)
 	ensure_image

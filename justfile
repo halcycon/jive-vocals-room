@@ -90,6 +90,22 @@ build-room: _check-submodule
 build-room-live: _check-submodule
     CGO_ENABLED=1 go build -tags pipewire -o jive-room ./cmd/jive-room
 
+# Build jive-room with JACK input capture (needs JACK development headers)
+build-room-jack: _check-submodule
+    CGO_ENABLED=1 go build -tags jack -o jive-room ./cmd/jive-room
+
+# JACK-tagged Go tests (headers required; hardware test runs only with JIVE_LIVE_JACK set)
+test-jack: _check-submodule
+    CGO_ENABLED=1 go test -tags jack ./internal/live/... ./cmd/jive-room
+
+# Build the StudioLive Mac mini binary (JACK, glibc 2.39) in the Ubuntu 24.04 image
+build-studiolive:
+    JIVE_DEV_IMAGE=localhost/jive-room-ubuntu:24.04 JIVE_CONTAINERFILE=Containerfile.ubuntu ./scripts/dev-container.sh "just build-room-jack && just test-jack"
+
+# Copy the JACK binary to the StudioLive Mac mini (default mixer@studiolive)
+deploy-studiolive host="mixer@studiolive":
+    ./scripts/deploy-studiolive.sh {{host}}
+
 # Offline C ring harness (no PipeWire)
 test-rt:
     gcc -std=c11 -O2 -Wall -Wextra -o /tmp/jive-rt-ring-test internal/live/rt/ring.c internal/live/rt/harness/main.c

@@ -73,7 +73,7 @@ Phantom power, channel and FireWire routing (`firewire`, `post`, FireWire 15/16 
 
 ## Phases
 
-1. **Read-only JACK analyser.** JACK backend for `jive-room -live`, an Ubuntu 24.04 build image, and channel-to-stream mapping verified on hardware.
+1. **Read-only JACK analyser.** Mostly done. The `-tags jack` backend, `-studiolive-channel` / `-jack-source`, the Ubuntu 24.04 image (`just build-studiolive`) and `just deploy-studiolive` are in place. On the mini the analyser reports 44.1 kHz, 1024-frame periods, zero xruns and zero analysis drops over a 60-second soak, and leaves no ports behind on exit. Still open: verify the stereo channel-to-stream mapping with signal present (all 16 streams were idle at about −114 dBFS during testing).
 2. **Read-only mixer state.** Go OSC client of the bridge state stream, the StudioLive mixer model, and calibration tables.
 3. **Advance mode, read-only.** Captures from JACK, the ring-out detector, operator-started pink playback, and a read-only ROOM tab in Open Stage Control.
 4. **Assisted apply and profiles.** Bridge `/dsp` apply/revert, snapshot, read-back verification, and profile save/load/push.

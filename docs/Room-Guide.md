@@ -117,7 +117,7 @@ Optional relative microphone calibration (frequency/level points). This is **not
 
 ## Live analyser (watching while you tune)
 
-`-live` is a **read-only side tap** of a PipeWire input. It does not sit in the speaker path, does not EQ, and does not change gain. Use it while you turn knobs on the **hardware mixer** (or, later, on the software EQ once pass-through exists).
+`-live` is a **read-only side tap** of a PipeWire input (or JACK; see below). It does not sit in the speaker path, does not EQ, and does not change gain. Use it while you turn knobs on the **hardware mixer** (or, later, on the software EQ once pass-through exists).
 
 On a TTY it opens a spectrum TUI:
 
@@ -148,6 +148,20 @@ Keys:
 | q / Ctrl+C | Quit |
 
 Non-TTY (or `-live-plain`) prints one line per analysis tick instead.
+
+Each analysis window spans about 0.9 s (nine overlapping 8192-point FFT frames), so a tonal candidate must persist across most of that window before it is shown. A tone line reports prominence relative to the local spectrum, not an absolute level. On an idle StudioLive input the analyser reports steady lines at a quarter and an eighth of the sample rate (11025 and 5512 Hz at 44.1 kHz) on a −116 dBFS floor. These are real converter or stream idle tones, but they are far below anything audible.
+
+### StudioLive over JACK
+
+On the StudioLive Mac mini, audio comes from FFADO/JACK rather than PipeWire. `jive-room` joins the JACK graph as one more read-only client beside the RTA and recorder. It registers input ports only, so it cannot play audio, and it makes no mixer writes.
+
+```bash
+jive-room -studiolive-channel 3                  # TUI for desk channel 3
+jive-room -studiolive-channel 10 -live-plain     # stereo channel 10, one line per tick
+jive-room -jack-source '_Ch 15_in' -jack-source '_Ch 16_in'   # explicit FireWire streams
+```
+
+`-studiolive-channel` maps desk channels 1–8 to FireWire streams 1–8, and stereo channels 9–12 to stream pairs 9/10, 11/12, 13/14 and 15/16. That mapping follows osclive's meter layout and has **not yet been verified with signal on the hardware**. To check it, play a source into one side of stereo channel 10 and confirm that `-jack-source '_Ch 11_in'` or `'_Ch 12_in'` moves. The `xruns` count covers the whole JACK graph, not just this client. Over SSH the client runs without real-time priority, as the bridge-launched RTA already does. A 60-second soak at 44.1 kHz with 1024-frame periods showed no xruns.
 
 ### When to stop adjusting a band
 

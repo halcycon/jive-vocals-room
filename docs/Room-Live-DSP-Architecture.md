@@ -15,6 +15,8 @@ Ambient noise, PA/room transfer response, speech masking, and feedback are separ
 - `internal/live`: control-plane types, rolling ring consumer, and `OpenInputAnalyser`. Default builds return `ErrPipeWireDisabled`.
 - `internal/live/rt`: C SPSC analysis ring. Write is RT-safe; read is the non-RT consumer. Offline C harness in `internal/live/rt/harness`.
 - `internal/live/pipewire`: native PipeWire input capture (`//go:build pipewire`). The callback copies into the ring and never calls Go.
+- `internal/live/jack`: native JACK input capture (`//go:build jack`) with input ports only. The process callback interleaves into preallocated scratch and writes the ring. Both backends feed one shared non-RT `ringAnalyser`; `OpenInputAnalyser(InputOptions)` selects the backend.
+- `internal/studiolive`: pure StudioLive 16.0.2 model (channel-to-FireWire-stream layout today; mixer controls and calibration next).
 - `cmd/jive-room`: wizard/automation entry point plus optional `-live` read-only analyser TUI. `cmd/jive-vocals` is unchanged.
 
 The live analyser is a side tap: the C callback copies into a fixed SPSC ring and continues processing. Slow Go analysis consumes the ring independently. Go is never called by the real-time callback. On a TTY, `-live` shows a 15-band spectrum and RMS sparkline with a freeze/Δ view so an engineer can watch a mixer cut settle. Freeze and peak-hold are display-only; they never change audio.

@@ -53,7 +53,7 @@ func TestOpenInputAnalyserDisabledByDefault(t *testing.T) {
 	if PipeWireBuilt() {
 		t.Skip("PipeWire capture is linked in this build")
 	}
-	_, err := OpenInputAnalyser()
+	_, err := OpenInputAnalyser(InputOptions{})
 	if !errors.Is(err, ErrPipeWireDisabled) {
 		t.Fatalf("got %v", err)
 	}

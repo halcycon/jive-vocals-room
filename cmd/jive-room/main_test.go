@@ -77,6 +77,35 @@ func TestCLIRequiresEmptyUnlessGenerating(t *testing.T) {
 	}
 }
 
+func TestCLIStudioLiveChannelRequiresJACKBuild(t *testing.T) {
+	if live.JACKBuilt() {
+		t.Skip("JACK capture is linked in this build")
+	}
+	err := run([]string{"-studiolive-channel", "3", "-live-plain"})
+	if !errors.Is(err, live.ErrJACKDisabled) {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestCLILiveOptions(t *testing.T) {
+	opts, err := liveOptions("jack", []string{"_Ch 1_in"}, 10, "jive-room")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(opts.JACKSources, "|"); got != "_Ch 1_in|_Ch 11_in|_Ch 12_in" {
+		t.Fatalf("sources %q", got)
+	}
+	if _, err := liveOptions("jack", nil, 0, "jive-room"); err == nil {
+		t.Fatal("jack without sources accepted")
+	}
+	if _, err := liveOptions("jack", nil, 13, "jive-room"); err == nil {
+		t.Fatal("channel 13 accepted")
+	}
+	if err := run([]string{"-studiolive-channel", "13"}); !isUsage(err) {
+		t.Fatalf("channel 13 should be a usage error, got %v", err)
+	}
+}
+
 func TestCLILiveRequiresPipeWireBuild(t *testing.T) {
 	if live.PipeWireBuilt() {
 		t.Skip("PipeWire capture is linked in this build")
