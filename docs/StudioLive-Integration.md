@@ -147,7 +147,12 @@ Read with `jive-room -studiolive-state` through the new bridge port. The bridge 
    - Deployed on the mini.
    - Real-desk checks so far are non-writing only: saving a profile, and pushing it back as "already matches".
    - Still open: the first supervised real write, and verifying calibration so ring-out proposals can be applied.
-5. **Live recommendations,** display only.
+5. **Live recommendations, display only,** plus headless operation. Built.
+   - `internal/liverec`: an active-frame long-term spectrum with HPF, resonance, sibilance, clipping and low-level advice, a 10 s hold and release, and desk-aware suppression. Thresholds are synthetic only.
+   - The monitor (`runMonitor`) runs it beside ring-out, and publishes to `/dsp/ui/live/*`.
+   - `jive-room -studiolive-daemon` executes ROOM-tab commands forwarded by the bridge (`/dsp/cmd/...`): channel, monitor, captures, PA ARM then CONFIRM (only to a sink configured in the service), session, analysis, and profile save/restore. Restore is a pending proposal only.
+   - Verified on the mini by sending the tab's OSC to UDP 9000: the monitor ran alongside a 10 s capture, and analysis, profile save and restore, and the PA gate all behaved, with no desk writes.
+   - The daemon runs under `setsid` until `studiolive-room.service` is installed.
 6. **Guarded automatic cuts,** off by default.
 
 ## Open questions to resolve on hardware

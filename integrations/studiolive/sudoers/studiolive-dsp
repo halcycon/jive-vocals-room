@@ -1,9 +1,8 @@
-# Lets the mixer user restart only the bridge and Open Stage Control units
-# without a password, for scripts/deploy-studiolive-bridge.sh and the
-# Open Stage Control session deploy. sudoers matches these argument lists
-# exactly; nothing else is granted.
+# Lets the mixer user restart only the bridge, Open Stage Control, and the
+# jive-room daemon units without a password, for the deploy scripts. sudoers
+# matches these argument lists exactly; nothing else is granted.
 #
 # Install on the Mac mini:
 #   sudo install -m 0440 -o root -g root studiolive-dsp /etc/sudoers.d/studiolive-dsp
 #   sudo visudo -cf /etc/sudoers.d/studiolive-dsp
-mixer ALL=(root) NOPASSWD: /usr/bin/systemctl restart studiolive-bridge.service, /usr/bin/systemctl restart studiolive-osc.service
+mixer ALL=(root) NOPASSWD: /usr/bin/systemctl restart studiolive-bridge.service, /usr/bin/systemctl restart studiolive-osc.service, /usr/bin/systemctl restart studiolive-room.service

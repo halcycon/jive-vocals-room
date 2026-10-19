@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"os/signal"
@@ -186,15 +187,17 @@ func (r *recorder) dropError() error {
 
 type stagePublisher struct {
 	bridge    *studiolive.BridgeClient
+	owned     bool
+	out       io.Writer
 	lastPrint time.Time
 }
 
 func newStagePublisher(addr string) *stagePublisher {
 	bc, err := studiolive.DialBridge(addr)
 	if err != nil {
-		return &stagePublisher{}
+		return &stagePublisher{out: os.Stdout}
 	}
-	return &stagePublisher{bridge: bc}
+	return &stagePublisher{bridge: bc, owned: true, out: os.Stdout}
 }
 
 // say prints and publishes a status line to the ROOM tab.
@@ -209,9 +212,9 @@ func (p *stagePublisher) progress(format string, args ...any) {
 
 func (p *stagePublisher) publish(toStdout bool, format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
-	if toStdout {
+	if toStdout && p.out != nil {
 		p.lastPrint = time.Now()
-		fmt.Println(msg)
+		fmt.Fprintln(p.out, msg)
 	}
 	if p.bridge != nil {
 		_ = p.bridge.PublishUI("/dsp/ui/room/stage", msg)
@@ -219,7 +222,7 @@ func (p *stagePublisher) publish(toStdout bool, format string, args ...any) {
 }
 
 func (p *stagePublisher) close() {
-	if p.bridge != nil {
+	if p.bridge != nil && p.owned {
 		_ = p.bridge.Close()
 	}
 }
@@ -231,7 +234,7 @@ func checkCaptureSeconds(s float64) error {
 	return nil
 }
 
-func runStageCapture(stageArg string, opts live.InputOptions, channel int, seconds float64, dir, bridgeAddr string) error {
+func runStageCapture(ctx context.Context, stageArg string, opts live.InputOptions, channel int, seconds float64, dir string, pub *stagePublisher) error {
 	stage, ok := stageAliases[stageArg]
 	if !ok {
 		return usageError{fmt.Errorf("unknown capture stage %q (want empty, occupied, presenter, or verification)", stageArg)}
@@ -242,10 +245,6 @@ func runStageCapture(stageArg string, opts live.InputOptions, channel int, secon
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	pub := newStagePublisher(bridgeAddr)
-	defer pub.close()
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	rate, err := live.JACKSampleRate(opts.JACKClientName + "-probe")
 	if err != nil {
@@ -296,7 +295,7 @@ func runStageCapture(stageArg string, opts live.InputOptions, channel int, secon
 	}
 	pub.say("saved %s: %.1f s, RMS %.1f dBFS, peak %.1f dBFS", path, meta.DurationSeconds, meta.RMSDBFS, meta.PeakDBFS)
 	for _, n := range meta.Notes {
-		fmt.Println("  note:", n)
+		pub.say("note: %s", n)
 	}
 	return nil
 }
@@ -326,7 +325,7 @@ func planPAMeasurement(spec room.TestSignalSpec, rate int) (paPlan, error) {
 	return paPlan{spec: spec, reference: ref, startFrame: start, endFrame: end}, nil
 }
 
-func runPAMeasure(opts live.InputOptions, channel int, sinkArg string, spec room.TestSignalSpec, confirmed bool, dir, bridgeAddr string) error {
+func runPAMeasure(ctx context.Context, opts live.InputOptions, channel int, sinkArg string, spec room.TestSignalSpec, confirmed bool, dir string, pub *stagePublisher) error {
 	if sinkArg == "" {
 		return usageError{fmt.Errorf("-studiolive-pa-measure needs -play-pink-to, e.g. '_Ch 15_out'")}
 	}
@@ -340,11 +339,6 @@ Re-run with -confirm-playback when ready`, sinkArg, -spec.HeadroomDB)}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	pub := newStagePublisher(bridgeAddr)
-	defer pub.close()
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
 	rate, err := live.JACKSampleRate(opts.JACKClientName + "-probe")
 	if err != nil {
 		return err
@@ -437,7 +431,7 @@ Re-run with -confirm-playback when ready`, sinkArg, -spec.HeadroomDB)}
 	}
 	pub.say("saved %s and %s: %.1f s measured, RMS %.1f dBFS, peak %.1f dBFS", refPath, measPath, meta.DurationSeconds, meta.RMSDBFS, meta.PeakDBFS)
 	for _, n := range meta.Notes {
-		fmt.Println("  note:", n)
+		pub.say("note: %s", n)
 	}
 	return nil
 }
@@ -480,13 +474,17 @@ func runStudioLiveCapture(fs *flag.FlagSet, a captureArgs) error {
 	if err != nil {
 		return usageError{err}
 	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	pub := newStagePublisher(a.bridge)
+	defer pub.close()
 	if a.stage != "" {
-		return runStageCapture(a.stage, opts, a.channel, a.seconds, a.dir, a.bridge)
+		return runStageCapture(ctx, a.stage, opts, a.channel, a.seconds, a.dir, pub)
 	}
 	if !flagSet(fs, "pink-headroom-db") {
 		a.pink.HeadroomDB = minPlaybackHeadroomDB
 	}
-	return runPAMeasure(opts, a.channel, a.sink, a.pink, a.confirmed, a.dir, a.bridge)
+	return runPAMeasure(ctx, opts, a.channel, a.sink, a.pink, a.confirmed, a.dir, pub)
 }
 
 // sessionDirInputs fills unset analysis inputs from standard capture names.

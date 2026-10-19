@@ -91,7 +91,13 @@ type Events struct {
 	OnReplayed func(count int)
 	// OnResult receives the bridge's submit/apply/revert reports.
 	OnResult func(ApplyResult)
+	// OnCommand receives operator commands (/dsp/cmd/...) that Open Stage
+	// Control sent to the bridge, which forwards them to DSP subscribers only.
+	OnCommand func(osc.Message)
 }
+
+// CommandPrefix is the operator-command namespace forwarded by the bridge.
+const CommandPrefix = "/dsp/cmd/"
 
 // Run subscribes, renews the subscription, and applies updates to State until
 // ctx ends, then unsubscribes.
@@ -132,6 +138,12 @@ func (c *BridgeClient) Run(ctx context.Context, ev Events) error {
 			if m.Address == addrReplayDone {
 				if count, ok := m.Float(0); ok && ev.OnReplayed != nil {
 					ev.OnReplayed(int(count))
+				}
+				continue
+			}
+			if strings.HasPrefix(m.Address, CommandPrefix) {
+				if ev.OnCommand != nil {
+					ev.OnCommand(m)
 				}
 				continue
 			}

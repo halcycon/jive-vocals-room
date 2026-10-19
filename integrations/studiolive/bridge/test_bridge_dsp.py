@@ -241,6 +241,15 @@ class BridgeDSPTest(unittest.TestCase):
         self.bridge.drain(timeout=0.2)
         self.assertTrue(any(a == "/dsp/ui/apply/status" for a, _ in self.bridge.ui_msgs))
 
+    def test_ui_commands_reach_dsp_subscribers_only(self):
+        self.bridge.send_ui("/dsp/cmd/channel", 3)
+        self.bridge.send_ui("/dsp/cmd/capture/empty", 1.0)
+        got = []
+        self.bridge.drain(until=lambda m: m.address.startswith("/dsp/cmd/") and got.append((m.address, m.params)) is None and len(got) == 2, timeout=2)
+        self.assertEqual(got, [("/dsp/cmd/channel", [3]), ("/dsp/cmd/capture/empty", [1.0])])
+        time.sleep(0.3)
+        self.assertEqual(self.written(), [])
+
     def test_rate_limit(self):
         self.assertEqual(self.submit_apply("r1", "profile", [("/channel/ch7/eqlowgain", 120)])["status"], "verified")
         r = self.submit_apply("r2", "profile", [("/channel/ch8/eqlowgain", 120)])

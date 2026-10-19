@@ -171,6 +171,37 @@ jive-room -studiolive-watch                         # print each control change 
 
 Frequencies and gains come from a model built from the Open Stage Control knob labels (log frequency, linear ±15 dB gain). They have not yet been checked against the desk, and the raw 8-bit value is always shown alongside. GEQ bands are shown as raw steps from flat because their dB size is not yet known.
 
+### Headless: the ROOM tab (StudioLive)
+
+On the Mac mini, everything below can run from a browser or tablet. Open Open Stage Control (`http://<mini>:8080`) and use the **ROOM** tab. The `jive-room` daemon (`studiolive-room.service`) does the work, and the tab's buttons reach it through the bridge.
+
+| Area | Buttons | What happens |
+| --- | --- | --- |
+| Channel | 1–12 | Selects the desk channel for the monitor and captures |
+| Monitor | START / STOP | Ring-out candidates plus live advice on the selected channel (read-only) |
+| Capture | EMPTY, OCCUPIED, PRESENTER, VERIFY, STOP TASK | Records into the current session folder (`~/studiolive/sessions/<time>/`) |
+| PA measurement | ARM, then CONFIRM (double-tap) within 10 s | Plays pink noise to the sink fixed in the service (disabled by default) and measures the selected channel |
+| Session | NEW / ANALYSE | Starts a new folder, or writes `jive-room-session.json`/`.md`, with a summary shown in the tab |
+| Profile | SAVE / RESTORE (pending) | Saves the desk's HPF/EQ/GEQ; restore makes a pending proposal only |
+| Apply | APPLY / UNDO (double-tap) | The only buttons that write to the desk, through the bridge's checks |
+
+The top line of the right-hand column shows the daemon's heartbeat: channel, monitor, current task, session, and PA sink. If it stops updating, the daemon is not running. One task runs at a time, alongside the monitor. Anyone who can reach port 9000 can press these buttons, just as they can already move the desk's faders.
+
+### Live advice (StudioLive, display only)
+
+While the monitor runs, the tab lists slow recommendations for the selected channel. `jive-room -live-advice-file voice.wav` runs the same logic over a recording.
+
+It assumes the source is **voice**. It also listens to the channel's FireWire send, which on this desk is pre-DSP, so the desk's own HPF and EQ are not in the signal. Desk settings are consulted, through the unverified model, only to avoid repeating advice the desk already follows.
+
+- **Evidence** is a long-term spectrum of *active* frames only, those at least 10 dB above the channel's own noise floor and above −70 dBFS, over the last 30 s. Nothing is shown until 5 s of active signal has been heard.
+- **The rules:**
+  - **HPF:** 40–90 Hz is within 10 dB of the 150–400 Hz voice body. Suppressed if the desk HPF is on at 80 Hz or above.
+  - **Resonance:** a 1/3-octave band between 400 Hz and 5 kHz is at least 5 dB above the trend of the bands 2/3–1 octave either side, and above each side on its own.
+  - **Sibilance:** 6–9 kHz relative to 1–3 kHz is noticeable from −6 dB and strong from 0 dB, the same split Jive Vocals' de-esser uses. The desk has no de-esser, so the advice is a gentle high-band cut or moving the mic off-axis.
+  - **Level:** a peak at or above −1 dBFS means "lower the input gain"; a median active level below −45 dBFS means "consider more input gain". Gain is never changed by software.
+- **Hold:** a condition must hold for 10 s before it appears, and clear for 10 s before it disappears.
+- **Validation:** these thresholds are justified by synthetic signals only. Check them against real voices with `-live-advice-file` before trusting them.
+
 ### Sound-check captures over JACK (StudioLive)
 
 Record each stage straight from a desk channel into a session folder, then analyse the folder:

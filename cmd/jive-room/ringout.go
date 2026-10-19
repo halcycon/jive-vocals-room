@@ -13,6 +13,7 @@ import (
 
 	"github.com/linuxmatters/jive-vocals/internal/feedback"
 	"github.com/linuxmatters/jive-vocals/internal/live"
+	"github.com/linuxmatters/jive-vocals/internal/liverec"
 	"github.com/linuxmatters/jive-vocals/internal/roomfile"
 	"github.com/linuxmatters/jive-vocals/internal/studiolive"
 )
@@ -202,13 +203,11 @@ func runRingOutLive(opts live.InputOptions, channel int, bridgeAddr string, subm
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	var st *studiolive.State
-	pub := &ringOutPublisher{}
-	sub := &ringOutSubmitter{mode: submit}
-	if bc, err := studiolive.DialBridge(bridgeAddr); err != nil {
+	var bc *studiolive.BridgeClient
+	if c, err := studiolive.DialBridge(bridgeAddr); err != nil {
 		fmt.Fprintf(os.Stderr, "bridge %s unavailable (%v); continuing without mixer state or UI\n", bridgeAddr, err)
 	} else {
-		st, pub.bridge, sub.bridge = bc.State, bc, bc
+		bc = c
 		runDone := make(chan struct{})
 		defer func() {
 			stop()
@@ -227,14 +226,34 @@ func runRingOutLive(opts live.InputOptions, channel int, bridgeAddr string, subm
 			}})
 		}()
 	}
+	fmt.Printf("Monitor on CH%d (%s): ring-out candidates and live recommendations. Read-only: no playback, no mixer writes, no gain changes.\n", channel, strings.Join(opts.JACKSources, ", "))
+	fmt.Println("Raise gain on the desk slowly yourself; stop as soon as anything rings.")
+	return runMonitor(ctx, opts, channel, bc, submit, os.Stdout)
+}
 
+// runMonitor analyses one channel until ctx ends: ring-out candidates with
+// bounded proposals, and slow display-only live recommendations. bc may be nil
+// (no mixer state, no UI). It never writes to the desk; -ringout-submit only
+// holds a proposal pending on the bridge for the operator's APPLY.
+func runMonitor(ctx context.Context, opts live.InputOptions, channel int, bc *studiolive.BridgeClient, submit ringOutSubmitMode, out io.Writer) error {
+	var st *studiolive.State
+	pub := &ringOutPublisher{}
+	sub := &ringOutSubmitter{mode: submit}
+	if bc != nil {
+		st, pub.bridge, sub.bridge = bc.State, bc, bc
+	}
 	var det *feedback.Detector
+	var rec *liverec.Recommender
 	opts.SampleTap = func(mono []float64, rate int) {
 		if det == nil || det.SampleRate() != rate {
 			det, _ = feedback.New(rate)
+			rec, _ = liverec.New(rate)
 		}
 		if det != nil {
 			det.Push(mono)
+		}
+		if rec != nil {
+			rec.Push(mono)
 		}
 	}
 	analyser, err := live.OpenInputAnalyser(opts)
@@ -243,9 +262,7 @@ func runRingOutLive(opts live.InputOptions, channel int, bridgeAddr string, subm
 	}
 	defer analyser.Close()
 
-	fmt.Printf("Ring-out assistant on CH%d (%s). Read-only: no playback, no mixer writes, no gain changes.\n", channel, strings.Join(opts.JACKSources, ", "))
-	fmt.Println("Raise gain on the desk slowly yourself; stop as soon as anything rings.")
-	last, lastPrint := "", time.Time{}
+	last, lastPrint, lastLive, lastRecs := "", time.Time{}, time.Time{}, ""
 	if err := analyser.Start(ctx, func(s live.Snapshot) {
 		var cs []feedback.Candidate
 		if det != nil {
@@ -256,16 +273,26 @@ func runRingOutLive(opts live.InputOptions, channel int, bridgeAddr string, subm
 		changed := key != last
 		if changed || time.Since(lastPrint) >= ringOutHeartbeat {
 			last, lastPrint = key, time.Now()
-			fmt.Printf("%s  %s\n", time.Now().Format("15:04:05"), status)
-			ringOutReport(os.Stdout, cs, channel, st)
+			fmt.Fprintf(out, "%s  %s\n", time.Now().Format("15:04:05"), status)
+			ringOutReport(out, cs, channel, st)
 		}
 		pub.publish(status, cs, channel, st, changed)
 		sub.consider(cs, channel, st)
+		if rec != nil && time.Since(lastLive) >= liveEvalPeriod {
+			lastLive = time.Now()
+			recs := rec.Recommendations(deskFor(st, channel))
+			if k := liveKey(recs); k != lastRecs {
+				lastRecs = k
+				reportLive(out, rec.Status(), recs)
+			}
+			pub.publishLive(rec.Status(), recs, channel)
+		}
 	}); err != nil {
 		return err
 	}
 	<-ctx.Done()
-	pub.publish("ring-out assistant stopped", nil, channel, st, true)
+	pub.publish("monitor stopped", nil, channel, st, true)
+	pub.publishLive(liverec.Status{}, nil, 0)
 	return nil
 }
 

@@ -70,6 +70,11 @@ func run(args []string) error {
 	confirmApply := fs.Bool("confirm-apply", false, "confirm writing to the desk through the bridge (snapshot and undo included)")
 	ringOutSubmit := fs.Bool("ringout-submit", false, "with -studiolive-ringout, hold the top channel-mid proposal pending for APPLY in the ROOM tab")
 	allowUnverified := fs.Bool("allow-unverified-calibration", false, "let -ringout-submit use the unverified EQ calibration model (operator takes responsibility)")
+	daemonMode := fs.Bool("studiolive-daemon", false, "run headless for the ROOM tab: operator commands arrive through the bridge; never writes to the desk")
+	home, _ := os.UserHomeDir()
+	sessionsRoot := fs.String("sessions-root", filepath.Join(home, "studiolive", "sessions"), "daemon: directory for timestamped session folders")
+	profilesDir := fs.String("profiles-dir", filepath.Join(home, "studiolive", "profiles"), "daemon: directory for saved desk profiles")
+	liveAdviceFile := fs.String("live-advice-file", "", "run the live recommender over a WAV/FLAC voice recording and print its advice (offline)")
 	venue := fs.String("venue", "", "venue or room label")
 	out := fs.String("out", "jive-room-session.json", "session JSON path")
 	pink := room.DefaultPinkSpec()
@@ -110,6 +115,15 @@ func run(args []string) error {
 		if !flagSet(fs, "out") {
 			*out = filepath.Join(*sessionDir, "jive-room-session.json")
 		}
+	}
+	if *daemonMode {
+		return runDaemon(daemonConfig{
+			bridge: *bridgeAddr, sessionsRoot: *sessionsRoot, profilesDir: *profilesDir, playSink: *playPinkTo,
+			captureSeconds: *captureSeconds, pink: pink, jackClient: *jackClient, sources: jackSources,
+		})
+	}
+	if *liveAdviceFile != "" {
+		return runLiveAdviceFile(os.Stdout, *liveAdviceFile)
 	}
 	if *profileSave != "" {
 		return runProfileSave(*bridgeAddr, *profileSave, *studioLiveChannel, *profileLabel)

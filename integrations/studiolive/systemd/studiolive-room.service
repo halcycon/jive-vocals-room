@@ -1,0 +1,25 @@
+[Unit]
+Description=jive-room daemon for the Open Stage Control ROOM tab
+# Wants, not Requires: a bridge restart must not stop this daemon, and this
+# daemon failing must not affect the stack. It re-subscribes to the bridge
+# within 5 s of any bridge restart.
+Wants=studiolive-bridge.service
+After=studiolive-bridge.service
+
+[Service]
+Type=simple
+User=mixer
+Group=audio
+SupplementaryGroups=audio
+LimitRTPRIO=95
+LimitMEMLOCK=infinity
+WorkingDirectory=/home/mixer/studiolive
+# PA measurement from the ROOM tab stays disabled until a playback sink is
+# configured here, e.g. append:  -play-pink-to "_Ch 16_out"
+# Choose the FireWire return that your desk routes to the PA you measure.
+ExecStart=/home/mixer/.local/bin/jive-room -studiolive-daemon -capture-seconds 15
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

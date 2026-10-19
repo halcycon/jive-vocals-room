@@ -191,6 +191,12 @@ The first real deployment is a PreSonus StudioLive 16.0.2 behind `mixer@studioli
   - **ROOM tab:** double-tap APPLY and UNDO.
   - **Tests:** `integrations/studiolive/bridge/test_bridge_dsp.py` with `fake_osclive.py` (`just test-bridge`).
   - **Real desk:** non-writing checks only. Do the first real write only with the user present; the procedure is in `docs/StudioLive-Integration.md`.
+- Phase 5 and headless status:
+  - `internal/liverec` provides display-only live advice.
+  - `runMonitor` combines ring-out with live advice for the CLI and the daemon.
+  - `jive-room -studiolive-daemon` handles the bridge-forwarded `/dsp/cmd/...` ROOM-tab commands.
+  - `integrations/studiolive/systemd/studiolive-room.service` is staged for the user to install, along with an updated sudoers rule that adds the room unit. Until then the daemon runs on the mini under `setsid nohup`, logging to `~/studiolive/jive-room-daemon.log`. Use `pkill -x jive-room`, never `pkill -f`, which matches its own SSH shell.
+  - The daemon never writes to the desk; PA needs ARM then CONFIRM within 10 s and a service-configured sink (none by default).
 - `RawFromValue` truncates like osclive (`floor(v*255+1e-6)`), so the echo of a mid-step write reads back as the intended raw value.
 - `integrations/studiolive/sudoers/studiolive-dsp` is a narrow passwordless-restart rule for the user to install. Deploy scripts try `sudo -n` first and fall back to SIGKILL plus `Restart=on-failure`.
 - Bridge changes live in `integrations/studiolive/bridge/`; deploy with `just deploy-studiolive-bridge`. That restart (SIGKILL plus `Restart=on-failure`, since there is no passwordless sudo) also restarts `studiolive-osc` through `Requires=`.

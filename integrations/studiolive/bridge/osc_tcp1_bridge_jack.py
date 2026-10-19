@@ -45,6 +45,8 @@ Apply engine (the only path that writes to the desk on behalf of jive-room):
   audit line. It never writes in response to incoming state, and does
   nothing to the desk when a client disconnects.
   Open Stage Control may send /dsp/apply and /dsp/revert (button press >= 0.5).
+  /dsp/cmd/... from Open Stage Control is forwarded to DSP subscribers only
+  (the jive-room daemon), never to osclive.
   Results go to the UI (/dsp/ui/apply/status) and to DSP subscribers
   (/dsp/result <json>).
 """
@@ -1004,6 +1006,11 @@ def handle_local(addr, payload):
             pressed = False
         if pressed:
             start_worker(run_apply, None) if addr == "/dsp/apply" else start_worker(run_revert)
+        return True
+
+    if addr.startswith("/dsp/cmd/"):
+        # Operator commands for the jive-room daemon: DSP subscribers only.
+        dsp_forward(payload)
         return True
 
     if addr.startswith("/dsp/"):
