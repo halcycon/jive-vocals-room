@@ -197,6 +197,13 @@ The first real deployment is a PreSonus StudioLive 16.0.2 behind `mixer@studioli
   - `jive-room -studiolive-daemon` handles the bridge-forwarded `/dsp/cmd/...` ROOM-tab commands.
   - `integrations/studiolive/systemd/studiolive-room.service` is staged for the user to install, along with an updated sudoers rule that adds the room unit. Until then the daemon runs on the mini under `setsid nohup`, logging to `~/studiolive/jive-room-daemon.log`. Use `pkill -x jive-room`, never `pkill -f`, which matches its own SSH shell.
   - The daemon never writes to the desk; PA needs ARM then CONFIRM within 10 s and a service-configured sink (none by default).
+- Phase 6 status:
+  - **Built:** the bridge's `/dsp/auto/apply` with three locks (`dsp-config.json` `allow_auto_cuts`, an enable from the UI port only that expires after 30 min, and verified calibration in jive-room), plus `autoCutter` daemon guards and the ROOM tab's ENABLE (double-tap) and AUTO OFF.
+  - **Hardware:** the gate was verified on the real desk with the operator present; `dsp-config.json` was removed afterwards.
+  - **Blocked:** cuts from rings need calibration, and `jive-room -studiolive-calibrate` has not yet succeeded on this desk. The FireWire-return loop and the headphone-to-line loop both failed (see `docs/StudioLive-Integration.md`).
+  - **Open:** an unexplained 22.05 kHz pattern on FireWire capture streams 15/16.
+- Measured calibration is `studiolive.CalibrationFile` (`jive-room-studiolive-calibration/v1`), loaded from `-studiolive-calibration`, default `~/studiolive/calibration.json`. `UseCalibration` marks the measured controls verified; `ResetCalibration` restores the model.
+- Never use `pkill -f` with a pattern that also appears in your own SSH command line; it kills the session. Use `pkill -x` or PIDs.
 - `RawFromValue` truncates like osclive (`floor(v*255+1e-6)`), so the echo of a mid-step write reads back as the intended raw value.
 - `integrations/studiolive/sudoers/studiolive-dsp` is a narrow passwordless-restart rule for the user to install. Deploy scripts try `sudo -n` first and fall back to SIGKILL plus `Restart=on-failure`.
 - Bridge changes live in `integrations/studiolive/bridge/`; deploy with `just deploy-studiolive-bridge`. That restart (SIGKILL plus `Restart=on-failure`, since there is no passwordless sudo) also restarts `studiolive-osc` through `Requires=`.

@@ -347,63 +347,13 @@ Re-run with -confirm-playback when ready`, sinkArg, -spec.HeadroomDB)}
 	if err != nil {
 		return usageError{err}
 	}
-	play := make([]float32, len(plan.reference.Samples))
-	for i, v := range plan.reference.Samples {
-		play[i] = float32(v)
+	pub.say("PA measurement: pink noise to %s at %.0f dBFS peak for %.0f s, measuring %v. Ctrl+C stops with a fade.", sinkArg, -plan.spec.HeadroomDB, plan.spec.DurationSeconds, opts.JACKSources)
+	pc, err := playAndCapture(ctx, opts, sinkArg, plan)
+	if errors.Is(err, errCaptureCancelled) {
+		pub.say("PA measurement cancelled; playback faded out; nothing saved")
+		return err
 	}
-	rec := newRecorder(0)
-	opts.SampleTap = rec.tap
-	opts.RingFrames = captureRingFrames
-	opts.Playback = &live.PlaybackRequest{Sink: sinkArg, Samples: play}
-	a, err := live.OpenInputAnalyser(opts)
 	if err != nil {
-		return err
-	}
-	player, ok := a.(live.Player)
-	if !ok {
-		_ = a.Close()
-		return fmt.Errorf("this build cannot play test signals")
-	}
-	finish := func() {
-		player.StopPlayback()
-		deadline := time.Now().Add(2 * time.Second)
-		for player.PlaybackState() != live.PlaybackDone && time.Now().Before(deadline) {
-			time.Sleep(10 * time.Millisecond)
-		}
-		_ = a.Close()
-	}
-	if err := a.Start(ctx, rec.observe); err != nil {
-		finish()
-		return err
-	}
-	pub.say("PA measurement: pink noise to %s at %.0f dBFS peak for %.0f s, measuring %v. Ctrl+C stops with a fade.", player.PlaybackSink(), -plan.spec.HeadroomDB, plan.spec.DurationSeconds, opts.JACKSources)
-	time.Sleep(playbackStartDelay)
-	if err := player.Play(); err != nil {
-		finish()
-		return err
-	}
-	tick := time.NewTicker(20 * time.Millisecond)
-	defer tick.Stop()
-	for armed := false; ; {
-		select {
-		case <-ctx.Done():
-			finish()
-			pub.say("PA measurement cancelled; playback faded out; nothing saved")
-			return errCaptureCancelled
-		case <-tick.C:
-		}
-		pos := player.PlaybackFrames()
-		if !armed && pos >= plan.startFrame {
-			rec.arm()
-			armed = true
-		}
-		if pos >= plan.endFrame || player.PlaybackState() == live.PlaybackDone {
-			rec.stop()
-			break
-		}
-	}
-	finish()
-	if err := rec.dropError(); err != nil {
 		pub.say("PA measurement failed: %v", err)
 		return err
 	}
@@ -421,10 +371,10 @@ Re-run with -confirm-playback when ready`, sinkArg, -spec.HeadroomDB)}
 	peak := -plan.spec.HeadroomDB
 	startS := float64(plan.startFrame) / float64(rate)
 	measPath := filepath.Join(dir, paMeasuredFile)
-	meta, err := writeCapture(measPath, rec.samples, rate, CaptureMeta{
+	meta, err := writeCapture(measPath, pc.samples, rate, CaptureMeta{
 		Stage: room.StagePA, JACKSources: opts.JACKSources, StudioLiveChannel: channel,
-		XRunsDuringCapture: rec.xruns, AnalysisDrops: rec.drops,
-		PlaybackSink: player.PlaybackSink(), PlaybackPeakDBFS: &peak, PlaybackStartSecond: &startS,
+		XRunsDuringCapture: pc.xruns, AnalysisDrops: 0,
+		PlaybackSink: pc.sink, PlaybackPeakDBFS: &peak, PlaybackStartSecond: &startS,
 	})
 	if err != nil {
 		return err
@@ -485,6 +435,78 @@ func runStudioLiveCapture(fs *flag.FlagSet, a captureArgs) error {
 		a.pink.HeadroomDB = minPlaybackHeadroomDB
 	}
 	return runPAMeasure(ctx, opts, a.channel, a.sink, a.pink, a.confirmed, a.dir, pub)
+}
+
+type playCapture struct {
+	samples []float64
+	xruns   uint64
+	sink    string
+}
+
+// playAndCapture plays plan.reference once to sink and records the analyser's
+// sources over plan.startFrame..endFrame of playback. It discards the take if
+// any analysis frames were dropped, and always fades playback out before the
+// client closes, including on cancellation.
+func playAndCapture(ctx context.Context, opts live.InputOptions, sink string, plan paPlan) (playCapture, error) {
+	play := make([]float32, len(plan.reference.Samples))
+	for i, v := range plan.reference.Samples {
+		play[i] = float32(v)
+	}
+	rec := newRecorder(0)
+	opts.SampleTap = rec.tap
+	opts.RingFrames = captureRingFrames
+	opts.Playback = &live.PlaybackRequest{Sink: sink, Samples: play}
+	a, err := live.OpenInputAnalyser(opts)
+	if err != nil {
+		return playCapture{}, err
+	}
+	player, ok := a.(live.Player)
+	if !ok {
+		_ = a.Close()
+		return playCapture{}, fmt.Errorf("this build cannot play test signals")
+	}
+	finish := func() {
+		player.StopPlayback()
+		deadline := time.Now().Add(2 * time.Second)
+		for player.PlaybackState() != live.PlaybackDone && time.Now().Before(deadline) {
+			time.Sleep(10 * time.Millisecond)
+		}
+		_ = a.Close()
+	}
+	if err := a.Start(ctx, rec.observe); err != nil {
+		finish()
+		return playCapture{}, err
+	}
+	time.Sleep(playbackStartDelay)
+	if err := player.Play(); err != nil {
+		finish()
+		return playCapture{}, err
+	}
+	tick := time.NewTicker(20 * time.Millisecond)
+	defer tick.Stop()
+	for armed := false; ; {
+		select {
+		case <-ctx.Done():
+			finish()
+			return playCapture{}, errCaptureCancelled
+		case <-tick.C:
+		}
+		pos := player.PlaybackFrames()
+		if !armed && pos >= plan.startFrame {
+			rec.arm()
+			armed = true
+		}
+		if pos >= plan.endFrame || player.PlaybackState() == live.PlaybackDone {
+			rec.stop()
+			break
+		}
+	}
+	sinkName := player.PlaybackSink()
+	finish()
+	if err := rec.dropError(); err != nil {
+		return playCapture{}, err
+	}
+	return playCapture{samples: rec.samples, xruns: rec.xruns, sink: sinkName}, nil
 }
 
 // sessionDirInputs fills unset analysis inputs from standard capture names.

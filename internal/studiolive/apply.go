@@ -16,6 +16,13 @@ const (
 
 	SourceRingOut = "ringout"
 	SourceProfile = "profile"
+	// SourceAuto is a guarded automatic ring-out cut (phase 6). The bridge
+	// applies it only when allowed by its config and enabled by the operator.
+	SourceAuto = "auto"
+
+	addrAutoApply   = "/dsp/auto/apply"
+	addrAutoDisable = "/dsp/auto/disable"
+	addrAutoStatus  = "/dsp/auto/status"
 
 	addrProposalSet = "/dsp/proposal/set"
 	addrApply       = "/dsp/apply"
@@ -51,6 +58,13 @@ type ApplyResult struct {
 	Written   *int   `json:"written,omitempty"`
 	Unchanged *int   `json:"unchanged,omitempty"`
 	At        string `json:"at,omitempty"`
+	// RemainingSeconds accompanies action "auto" state reports.
+	RemainingSeconds int `json:"remaining_seconds,omitempty"`
+}
+
+// AutoEnabled reports whether an "auto" state report says automatic cuts are on.
+func (r ApplyResult) AutoEnabled() bool {
+	return r.Action == "auto" && r.ID == "" && r.Status == "enabled"
 }
 
 var ErrUnverifiedCalibration = errors.New("calibration for these controls has not been verified against the desk")
@@ -64,7 +78,7 @@ func (p WireProposal) Validate() error {
 	if !proposalIDPattern.MatchString(p.ID) {
 		return fmt.Errorf("proposal id %q must be 1-64 characters of [A-Za-z0-9._-]", p.ID)
 	}
-	if p.Source != SourceRingOut && p.Source != SourceProfile {
+	if p.Source != SourceRingOut && p.Source != SourceProfile && p.Source != SourceAuto {
 		return fmt.Errorf("unknown proposal source %q", p.Source)
 	}
 	if len(p.Changes) == 0 || len(p.Changes) > 256 {
@@ -231,3 +245,40 @@ func (c *BridgeClient) RequestApply(id string) error { return c.send(addrApply, 
 
 // RequestRevert asks the bridge to undo its most recent apply.
 func (c *BridgeClient) RequestRevert() error { return c.send(addrRevert) }
+
+// ProposalForAuto converts a ring-out channel-mid proposal into an automatic
+// cut. Verified calibration is mandatory; there is no override.
+func ProposalForAuto(p Proposal, now time.Time) (WireProposal, error) {
+	if p.Target != TargetChannelMid {
+		return WireProposal{}, fmt.Errorf("automatic cuts only use the channel mid band")
+	}
+	w, err := ProposalFromRingOut(p, false, now)
+	if err != nil {
+		return WireProposal{}, err
+	}
+	w.Source, w.ID, w.Summary = SourceAuto, newProposalID("auto", now), "AUTO "+w.Summary
+	return w, w.Validate()
+}
+
+// AutoApply asks the bridge to apply an automatic cut atomically. The bridge
+// refuses unless automatic cuts are allowed in its config and enabled by the
+// operator, and applies its ring-out policy (cuts only, bounded, mid band).
+func (c *BridgeClient) AutoApply(w WireProposal) error {
+	if w.Source != SourceAuto {
+		return fmt.Errorf("AutoApply needs source %q", SourceAuto)
+	}
+	if err := w.Validate(); err != nil {
+		return err
+	}
+	b, err := json.Marshal(w)
+	if err != nil {
+		return err
+	}
+	return c.send(addrAutoApply, string(b))
+}
+
+// DisableAuto switches automatic cuts off. jive-room can never switch them on.
+func (c *BridgeClient) DisableAuto() error { return c.send(addrAutoDisable) }
+
+// RequestAutoStatus asks the bridge to republish the automatic-cut state.
+func (c *BridgeClient) RequestAutoStatus() error { return c.send(addrAutoStatus) }

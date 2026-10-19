@@ -153,7 +153,32 @@ Read with `jive-room -studiolive-state` through the new bridge port. The bridge 
    - `jive-room -studiolive-daemon` executes ROOM-tab commands forwarded by the bridge (`/dsp/cmd/...`): channel, monitor, captures, PA ARM then CONFIRM (only to a sink configured in the service), session, analysis, and profile save/restore. Restore is a pending proposal only.
    - Verified on the mini by sending the tab's OSC to UDP 9000: the monitor ran alongside a 10 s capture, and analysis, profile save and restore, and the PA gate all behaved, with no desk writes.
    - The daemon runs under `setsid` until `studiolive-room.service` is installed.
-6. **Guarded automatic cuts,** off by default.
+6. **Guarded automatic cuts,** off by default. Built; the gate is verified on the real desk; automatic cuts from rings cannot fire yet because calibration is unmeasured.
+   - **Bridge:** `/dsp/auto/apply <json>` (source `auto`) is an atomic submit and apply that never touches the pending slot. Three locks must all be open:
+     - **Config:** `~/studiolive/dsp-config.json` has `{"allow_auto_cuts": true}`. The file is absent by default.
+     - **Operator enable:** `/dsp/auto/enable`, accepted only from the UI port (the double-tap ENABLE). It expires after 30 minutes (`STUDIOLIVE_DSP_AUTO_ENABLE_SECONDS`), and a bridge restart leaves cuts disabled. `/dsp/auto/disable` (AUTO OFF, or `jive-room`) switches them off.
+     - **jive-room:** verified calibration, with no override.
+   - **Bridge policy:** the ring-out rules (channel mid band only, cuts only, at most 26 raw steps, no retuning a boosting band), never the GEQ, at least 10 s between automatic cuts, and at most 6 per 10 minutes, after which the bridge disables them. Every cut is snapshotted, verified, audited, and undoable.
+   - **Daemon guards** (`autoCutter`):
+     - only non-harmonic, growing rings with confidence ≥ 0.9 lasting ≥ 1 s, inside the mid band's range;
+     - 10 s spacing, no re-cut of the same ring (±1/6 octave) within 60 s, and at most 3 cuts per monitor run;
+     - never retunes a mid band already cutting elsewhere; reports "operator attention needed" instead.
+   - **Lifecycle:** stopping the monitor, or changing channel, switches automatic cuts off.
+   - **Hardware check (2026-10-19, ch8 mid band switched off):** each lock refused correctly; a UI enable plus a bounded cut of 128 → 110 was verified on the desk; a boost was refused; AUTO OFF stopped further cuts; undo restored raw 128. `dsp-config.json` was removed again afterwards.
+
+### Real-desk write tests (2026-10-19, operator present)
+
+- **Profile push:** ch8 `eqhighgain` 128 → 102 (band off) was verified by read-back, and the operator confirmed the change on the desk. Undo restored 128.
+- **Calibration flat step and restore:** wrote ch8's HPF/EQ through the bridge and restored the snapshot, including HPF freq 96.
+- **Automatic-cut gate:** as above.
+
+### Calibration attempts (not yet successful)
+
+`jive-room -studiolive-calibrate -studiolive-channel N -confirm-apply -confirm-playback` is built. It steps a mono channel's HPF/EQ through 64 bridge-verified settings and measures each against a flat reference: Welch transfer at 1/12 octave, peak centre and gain, and HPF −3 dB corner. It needs pink noise to reach that channel's input, and its FireWire send to be post-DSP. On success it writes `~/studiolive/calibration.json`, which every command loads and treats as verified. On this desk:
+- **The FireWire-return loop fails.** With ch8 `firewire` and `post` on, pink noise played to each of the 16 FireWire returns reached no capture stream, and no channel meter moved. Either the `firewire` switch does not select the FireWire return as the channel input on the 16.0.2, or the returns are routed elsewhere (osclive has a masters-level `monFirewire`). Both switches were set back off.
+- **The headphone-to-line-input cable loop fails.** The Mac mini's headphone output plays (the operator heard it), but nothing reached ch8's line input, and no desk meter moved. This is probably a patching or input issue; not diagnosed further.
+- **An unexplained signal on FireWire capture streams 15/16.** A constant pattern at exactly half the sample rate (22.05 kHz) appeared between 13:01 and 14:05. It measured −13.4 dBFS RMS while ch8's FireWire switches were on, and −31.5 dBFS after they were reset. The operator changed nothing near inputs 15/16. This is an open item. A digital pattern like this is not audio, but it should be explained before streams 15/16 are trusted.
+- Still to try: a confirmed analogue path into a spare input, e.g. a known-good line source, or an aux output patched back into another input.
 
 ## Open questions to resolve on hardware
 

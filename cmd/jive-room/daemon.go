@@ -57,6 +57,7 @@ type daemon struct {
 	taskCancel    context.CancelFunc
 	paArmedUntil  time.Time
 	lastProfile   string
+	auto          *autoCutter
 }
 
 func runDaemon(cfg daemonConfig) error {
@@ -76,12 +77,12 @@ func runDaemon(cfg daemonConfig) error {
 	defer bc.Close()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	d := &daemon{cfg: cfg, bc: bc, ctx: ctx, out: os.Stdout, channel: 1}
+	d := &daemon{cfg: cfg, bc: bc, ctx: ctx, out: os.Stdout, channel: 1, auto: &autoCutter{}}
 	d.newSession()
 	runDone := make(chan struct{})
 	go func() {
 		defer close(runDone)
-		_ = bc.Run(ctx, studiolive.Events{OnCommand: d.command})
+		_ = bc.Run(ctx, studiolive.Events{OnCommand: d.command, OnResult: d.result})
 	}()
 	fmt.Fprintf(d.out, "jive-room daemon: bridge %s, sessions %s, profiles %s, PA sink %q\n", cfg.bridge, cfg.sessionsRoot, cfg.profilesDir, cfg.playSink)
 	tick := time.NewTicker(daemonHeartbeat)
@@ -98,6 +99,24 @@ func runDaemon(cfg daemonConfig) error {
 			d.heartbeat()
 		}
 	}
+}
+
+// result tracks the bridge's automatic-cut state and reports automatic applies.
+func (d *daemon) result(r studiolive.ApplyResult) {
+	if r.Action != "auto" {
+		return
+	}
+	if r.ID == "" {
+		was := d.auto.isEnabled()
+		d.auto.setEnabled(r.AutoEnabled())
+		if was != r.AutoEnabled() {
+			d.say("automatic cuts %s", map[bool]string{true: "ENABLED by the operator", false: "off"}[r.AutoEnabled()])
+		}
+		return
+	}
+	msg := fmt.Sprintf("automatic cut %s: %s %s", r.ID, r.Status, r.Reason)
+	fmt.Fprintf(d.out, "%s %s\n", time.Now().Format("15:04:05"), msg)
+	_ = d.bc.PublishUI("/dsp/ui/auto/last", time.Now().Format("15:04:05")+" "+msg)
 }
 
 func (d *daemon) say(format string, args ...any) {
@@ -236,10 +255,11 @@ func (d *daemon) startMonitor() {
 		return
 	}
 	opts.JACKClientName = d.cfg.jackClient + "-monitor"
+	d.auto.reset()
 	d.say("monitor started on CH%d: ring-out candidates and live advice (read-only)", ch)
 	go func() {
 		defer d.clearMonitor(done)
-		if err := runMonitor(ctx, opts, ch, d.bc, ringOutSubmitMode{}, d.out); err != nil {
+		if err := runMonitor(ctx, opts, ch, d.bc, ringOutSubmitMode{}, d.auto, d.out); err != nil {
 			d.say("monitor stopped: %v", err)
 		}
 	}()
@@ -254,12 +274,17 @@ func (d *daemon) clearMonitor(done chan struct{}) {
 	close(done)
 }
 
+// stopMonitor also switches automatic cuts off: they only make sense while
+// the monitor listens to the channel they would cut.
 func (d *daemon) stopMonitor() {
 	d.mu.Lock()
 	cancel, done := d.monitorCancel, d.monitorDone
 	d.mu.Unlock()
 	if cancel == nil {
 		return
+	}
+	if d.auto.isEnabled() {
+		_ = d.bc.DisableAuto()
 	}
 	cancel()
 	select {

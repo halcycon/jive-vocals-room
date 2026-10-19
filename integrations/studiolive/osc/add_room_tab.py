@@ -8,7 +8,10 @@ that jive-room and the bridge publish under /dsp/ui/. Sending widgets:
 - daemon commands (/dsp/cmd/...), which the bridge forwards only to the
   jive-room daemon: channel select, monitor, captures, PA ARM and CONFIRM
   (double-tap), session, analysis, and profile save/restore. None of these
-  writes to the desk; a profile restore only becomes a pending proposal.
+  writes to the desk; a profile restore only becomes a pending proposal;
+- automatic cuts: ENABLE (double-tap) and AUTO OFF, /dsp/auto/enable and
+  /dsp/auto/disable to the bridge, which alone can enable them (and only when
+  its dsp-config.json allows it).
 Re-running replaces an existing ROOM tab.
 
 Usage: add_room_tab.py <input session.json> <output session.json>
@@ -106,6 +109,9 @@ def daemon_controls(template, btn):
                           ("room_analyse", "/dsp/cmd/analyse", "ANALYSE", "#1565c0", False)]),
         (500, "PROFILE", [("room_profile_save", "/dsp/cmd/profile/save", "SAVE", "#455a64", False),
                           ("room_profile_restore", "/dsp/cmd/profile/submit", "RESTORE (pending)", "#455a64", False)]),
+        (580, "AUTOMATIC CUTS (needs config + measured calibration; monitor must run)",
+         [("room_auto_enable", "/dsp/auto/enable", "ENABLE (double-tap)", "#6a1b9a", True),
+          ("room_auto_off", "/dsp/auto/disable", "AUTO OFF", "#b71c1c", False)]),
     ]
     for top, label, buttons in rows:
         if label:
@@ -114,6 +120,11 @@ def daemon_controls(template, btn):
         bw = (w - 10 * (len(buttons) - 1)) // len(buttons)
         for i, (wid, addr, lab, colour, dbl) in enumerate(buttons):
             out.append(button(btn, wid, addr, lab, x + i * (bw + 10), top, colour, double=dbl, width=bw, height=40))
+    out += [
+        text(template, "room_auto_status", "/dsp/ui/auto/status", 628, 30, "font-size:11px;font-weight:600;",
+             "automatic cuts: state unknown (bridge not reporting)"),
+        text(template, "room_auto_last", "/dsp/ui/auto/last", 660, 44, "font-size:11px;"),
+    ]
     for w_ in out:
         if w_["type"] == "text":
             w_["left"], w_["width"] = x, w

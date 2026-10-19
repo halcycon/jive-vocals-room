@@ -71,7 +71,7 @@ func runMixerState(bridgeAddr string, channel int, watch bool) error {
 func formatUpdate(u studiolive.Update) string {
 	s := fmt.Sprintf("%s  %-18s value=%.4f raw=%3d", u.Value.UpdatedAt.Format("15:04:05.000"), u.Control, u.Value.Value, u.Value.Raw)
 	if cal, ok := studiolive.CalibrationFor(u.Control); ok {
-		s += fmt.Sprintf("  ≈ %s (model, unverified)", formatUnit(cal.ToUnit(u.Value.Value), cal.Unit))
+		s += fmt.Sprintf("  ≈ %s (%s)", formatUnit(cal.ToUnit(float64(u.Value.Raw)/255), cal.Unit), calLabel(cal))
 	}
 	if _, ok := studiolive.GEQBandIndex(u.Control); ok {
 		s += fmt.Sprintf("  %+d raw steps from flat", studiolive.RawStepsFromFlat(u.Value.Raw))
@@ -107,7 +107,7 @@ func printMixerState(w io.Writer, s *studiolive.State, channel int) {
 			channels = append(channels, n)
 		}
 	}
-	fmt.Fprintln(w, "Engineering values use the session-label model (log frequency, linear gain); not yet verified against the desk.")
+	fmt.Fprintln(w, calibrationBanner())
 	for _, n := range channels {
 		ch := studiolive.InputChannelName(n)
 		fmt.Fprintf(w, "\n%s  (FireWire send %s)\n", strings.ToUpper(ch), sendLabel(s, ch))
@@ -171,7 +171,21 @@ func describe(s *studiolive.State, ch, name string) string {
 		return "?"
 	}
 	if cal, ok := studiolive.CalibrationFor(c); ok {
-		return fmt.Sprintf("%s (raw %d)", formatUnit(cal.ToUnit(v.Value), cal.Unit), v.Raw)
+		return fmt.Sprintf("%s (raw %d)", formatUnit(cal.ToUnit(float64(v.Raw)/255), cal.Unit), v.Raw)
 	}
 	return fmt.Sprintf("raw %d", v.Raw)
+}
+
+func calLabel(c studiolive.Calibration) string {
+	if c.Verified {
+		return "measured"
+	}
+	return "model, unverified"
+}
+
+func calibrationBanner() string {
+	if studiolive.InputCalibration["eqmidgain"].Verified {
+		return "Engineering values use the measured calibration (" + studiolive.InputCalibration["eqmidgain"].Source + ")."
+	}
+	return "Engineering values use the session-label model (log frequency, linear gain); not yet verified against the desk."
 }

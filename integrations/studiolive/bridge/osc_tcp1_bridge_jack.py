@@ -31,6 +31,11 @@ DSP state port (127.0.0.1:9002, read-only towards the mixer):
   /dsp/proposal/clear
   /dsp/apply <id>          apply the pending proposal with that id
   /dsp/revert              undo the most recent apply
+  /dsp/auto/apply <json>   automatic ring-out cut (source "auto"): atomic
+                           submit+apply, only while automatic cuts are allowed
+                           in dsp-config.json AND enabled by the operator
+  /dsp/auto/disable        jive-room may switch automatic cuts off, never on
+  /dsp/auto/status         republish the automatic-cut state
 Anything else received on the DSP port is dropped. Nothing from it is ever
 forwarded to osclive as-is.
 
@@ -47,6 +52,12 @@ Apply engine (the only path that writes to the desk on behalf of jive-room):
   Open Stage Control may send /dsp/apply and /dsp/revert (button press >= 0.5).
   /dsp/cmd/... from Open Stage Control is forwarded to DSP subscribers only
   (the jive-room daemon), never to osclive.
+  /dsp/auto/enable (UI port only, double-tap) enables automatic cuts for
+  AUTO_ENABLE_SECONDS; /dsp/auto/disable (UI or DSP port) switches them off.
+  Automatic cuts follow the ring-out policy, never touch the GEQ, are at least
+  AUTO_MIN_INTERVAL s apart, and are capped at AUTO_MAX_PER_WINDOW per
+  AUTO_WINDOW_SECONDS, after which the bridge disables them. A restart leaves
+  them disabled.
   Results go to the UI (/dsp/ui/apply/status) and to DSP subscribers
   (/dsp/result <json>).
 """
@@ -86,6 +97,14 @@ DSP_STATE_DIR = os.path.expanduser(os.environ.get("STUDIOLIVE_DSP_STATE_DIR", "~
 PROPOSAL_SCHEMA = "jive-room-proposal/v1"
 RESULT_SCHEMA = "jive-room-apply-result/v1"
 PROPOSAL_SOURCES = ("ringout", "profile")
+# Automatic cuts (phase 6) need three things at once: allow_auto_cuts in
+# dsp-config.json (absent by default), an operator enable from the UI port only
+# (expires, and is lost on restart), and verified calibration in jive-room.
+AUTO_SOURCE = "auto"
+AUTO_ENABLE_SECONDS = float(os.environ.get("STUDIOLIVE_DSP_AUTO_ENABLE_SECONDS", "1800"))
+AUTO_MIN_INTERVAL = float(os.environ.get("STUDIOLIVE_DSP_AUTO_MIN_INTERVAL", "10"))
+AUTO_WINDOW_SECONDS = 600.0
+AUTO_MAX_PER_WINDOW = 6
 MAX_PROPOSAL_CHANGES = 256
 # A target channel must have been quiet on the desk this long, so a write
 # (which rewrites osclive's whole cached block) cannot undo a fresh knob move.
@@ -136,6 +155,10 @@ pending_lock = threading.Lock()
 pending_proposal = None
 undo_stack = []
 last_apply_time = 0.0
+
+auto_lock = threading.Lock()
+auto_enabled_until = 0.0  # monotonic; 0 = disabled
+auto_history = []  # monotonic times of automatic applies
 
 proc_lock = threading.Lock()
 analyser_proc = None
@@ -567,6 +590,102 @@ def submit_proposal(payload):
     publish_pending()
 
 
+def auto_allowed_by_config():
+    try:
+        with open(state_path("dsp-config.json")) as f:
+            return json.load(f).get("allow_auto_cuts") is True
+    except (OSError, ValueError, AttributeError):
+        return False
+
+
+def auto_state():
+    with auto_lock:
+        remaining = auto_enabled_until - time.monotonic()
+    return remaining if remaining > 0 else 0.0
+
+
+def publish_auto(reason=""):
+    remaining = auto_state()
+    if not auto_allowed_by_config():
+        status, text = "unavailable", "automatic cuts: not allowed in dsp-config.json"
+    elif remaining > 0:
+        status, text = "enabled", f"automatic cuts: ENABLED for {remaining / 60:.0f} more min (AUTO OFF to stop)"
+    else:
+        status, text = "disabled", "automatic cuts: off"
+    if reason:
+        text += f" - {reason}"
+    ui_send("/dsp/ui/auto/status", text)
+    dsp_forward(build_osc("/dsp/result", json.dumps({"schema_version": RESULT_SCHEMA, "action": "auto", "id": "",
+                                                       "status": status, "reason": reason, "remaining_seconds": int(remaining)})))
+
+
+def set_auto(enable, origin):
+    global auto_enabled_until
+    if enable and not auto_allowed_by_config():
+        publish_auto("enable refused: allow_auto_cuts is not set in dsp-config.json")
+        return
+    with auto_lock:
+        auto_enabled_until = time.monotonic() + AUTO_ENABLE_SECONDS if enable else 0.0
+    log(f"DSP automatic cuts {'enabled' if enable else 'disabled'} from {origin}")
+    publish_auto(f"{'enabled' if enable else 'disabled'} from {origin}")
+
+
+def run_auto_apply(payload):
+    """Atomic submit+apply for automatic ring-out cuts. Never uses the pending slot."""
+    global last_apply_time
+    raw = osc_first_param(payload)
+    try:
+        p = json.loads(raw) if isinstance(raw, str) else None
+    except ValueError:
+        p = None
+    pid = p.get("id", "") if isinstance(p, dict) else ""
+
+    def refuse(reason):
+        publish_result({"schema_version": RESULT_SCHEMA, "action": "auto", "id": str(pid), "source": AUTO_SOURCE, "status": "refused", "reason": reason})
+
+    if not isinstance(p, dict) or p.get("source") != AUTO_SOURCE:
+        return refuse("automatic applies must have source auto")
+    if not auto_allowed_by_config():
+        return refuse("automatic cuts are not allowed in dsp-config.json")
+    if auto_state() <= 0:
+        return refuse("automatic cuts are not enabled by the operator")
+    proposal, reason = validate_proposal(dict(p, source="ringout"))
+    if proposal is None:
+        return refuse(reason)
+    if any(c["channel"] == "geq0" for c in proposal["changes"]):
+        return refuse("automatic cuts may not touch the GEQ")
+    if not apply_lock.acquire(blocking=False):
+        return refuse("another apply is in progress")
+    try:
+        now = time.monotonic()
+        with auto_lock:
+            auto_history[:] = [t for t in auto_history if now - t < AUTO_WINDOW_SECONDS]
+            if auto_history and now - auto_history[-1] < AUTO_MIN_INTERVAL:
+                return refuse(f"automatic cuts are at least {AUTO_MIN_INTERVAL:.0f} s apart")
+            if len(auto_history) >= AUTO_MAX_PER_WINDOW:
+                return refuse(f"{AUTO_MAX_PER_WINDOW} automatic cuts in {AUTO_WINDOW_SECONDS / 60:.0f} min; disabling")
+        if now - last_apply_time < APPLY_MIN_INTERVAL:
+            return refuse("applies are rate-limited; try again")
+        result, snapshot = execute_changes("apply", proposal["id"], "ringout", proposal["changes"])
+        result.update(action="auto", source=AUTO_SOURCE)
+        if result["status"] != "refused":
+            last_apply_time = time.monotonic()
+            with auto_lock:
+                auto_history.append(time.monotonic())
+            if snapshot:
+                undo_stack.append({"id": proposal["id"], "source": AUTO_SOURCE, "at": result["at"], "snapshot": snapshot})
+                del undo_stack[:-UNDO_DEPTH]
+                persist_undo()
+        audit({**result, "summary": proposal["summary"], "changes": [{"address": c["address"], "raw": c["raw"]} for c in proposal["changes"]], "before": snapshot})
+        publish_result(result)
+        with auto_lock:
+            over = len(auto_history) >= AUTO_MAX_PER_WINDOW
+        if over:
+            set_auto(False, "bridge (automatic-cut limit reached)")
+    finally:
+        apply_lock.release()
+
+
 def clear_pending():
     global pending_proposal
     with pending_lock:
@@ -602,6 +721,7 @@ def handle_dsp(addr, payload, peer):
         if new:
             log(f"DSP subscriber {sub[0]}:{sub[1]} joined")
             dsp_replay(sub)
+            publish_auto()
         return
     if addr.startswith("/dsp/ui/"):
         try:
@@ -621,6 +741,15 @@ def handle_dsp(addr, payload, peer):
         return
     if addr == "/dsp/revert":
         start_worker(run_revert)
+        return
+    if addr == "/dsp/auto/apply":
+        start_worker(run_auto_apply, payload)
+        return
+    if addr == "/dsp/auto/disable":
+        set_auto(False, "jive-room")
+        return
+    if addr == "/dsp/auto/status":
+        publish_auto()
         return
     log(f"DSP port dropped {addr} from {peer[0]}:{peer[1]}")
 
@@ -987,9 +1116,13 @@ def recording_stop():
 
 
 def status_worker():
+    tick = 0
     while not stop_event.wait(1.0):
         analyser_publish()
         recording_publish()
+        tick += 1
+        if tick % 5 == 0:
+            publish_auto()
 
 
 def handle_local(addr, payload):
@@ -1006,6 +1139,15 @@ def handle_local(addr, payload):
             pressed = False
         if pressed:
             start_worker(run_apply, None) if addr == "/dsp/apply" else start_worker(run_revert)
+        return True
+
+    if addr in ("/dsp/auto/enable", "/dsp/auto/disable"):
+        try:
+            pressed = float(osc_first_param(payload)) >= 0.5
+        except (TypeError, ValueError):
+            pressed = False
+        if pressed:
+            set_auto(addr == "/dsp/auto/enable", "Open Stage Control")
         return True
 
     if addr.startswith("/dsp/cmd/"):

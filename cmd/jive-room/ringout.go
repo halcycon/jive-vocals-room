@@ -228,14 +228,15 @@ func runRingOutLive(opts live.InputOptions, channel int, bridgeAddr string, subm
 	}
 	fmt.Printf("Monitor on CH%d (%s): ring-out candidates and live recommendations. Read-only: no playback, no mixer writes, no gain changes.\n", channel, strings.Join(opts.JACKSources, ", "))
 	fmt.Println("Raise gain on the desk slowly yourself; stop as soon as anything rings.")
-	return runMonitor(ctx, opts, channel, bc, submit, os.Stdout)
+	return runMonitor(ctx, opts, channel, bc, submit, nil, os.Stdout)
 }
 
 // runMonitor analyses one channel until ctx ends: ring-out candidates with
 // bounded proposals, and slow display-only live recommendations. bc may be nil
 // (no mixer state, no UI). It never writes to the desk; -ringout-submit only
 // holds a proposal pending on the bridge for the operator's APPLY.
-func runMonitor(ctx context.Context, opts live.InputOptions, channel int, bc *studiolive.BridgeClient, submit ringOutSubmitMode, out io.Writer) error {
+// auto, when non-nil, may request guarded automatic cuts from the bridge.
+func runMonitor(ctx context.Context, opts live.InputOptions, channel int, bc *studiolive.BridgeClient, submit ringOutSubmitMode, auto *autoCutter, out io.Writer) error {
 	var st *studiolive.State
 	pub := &ringOutPublisher{}
 	sub := &ringOutSubmitter{mode: submit}
@@ -278,6 +279,21 @@ func runMonitor(ctx context.Context, opts live.InputOptions, channel int, bc *st
 		}
 		pub.publish(status, cs, channel, st, changed)
 		sub.consider(cs, channel, st)
+		if auto != nil && bc != nil {
+			if w, reason, ok := auto.decide(cs, channel, st, time.Now()); ok {
+				if err := bc.AutoApply(w); err != nil {
+					reason = "automatic cut not sent: " + err.Error()
+				} else {
+					reason = "requested " + w.Summary + " (bridge re-checks; UNDO reverts)"
+				}
+				_, _ = auto.note(reason)
+				fmt.Fprintf(out, "  %s\n", reason)
+				_ = bc.PublishUI("/dsp/ui/auto/last", time.Now().Format("15:04:05")+" "+reason)
+			} else if msg, ok := auto.note(reason); ok {
+				fmt.Fprintf(out, "  auto: %s\n", msg)
+				_ = bc.PublishUI("/dsp/ui/auto/last", time.Now().Format("15:04:05")+" "+msg)
+			}
+		}
 		if rec != nil && time.Since(lastLive) >= liveEvalPeriod {
 			lastLive = time.Now()
 			recs := rec.Recommendations(deskFor(st, channel))

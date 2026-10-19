@@ -187,6 +187,22 @@ On the Mac mini, everything below can run from a browser or tablet. Open Open St
 
 The top line of the right-hand column shows the daemon's heartbeat: channel, monitor, current task, session, and PA sink. If it stops updating, the daemon is not running. One task runs at a time, alongside the monitor. Anyone who can reach port 9000 can press these buttons, just as they can already move the desk's faders.
 
+### Automatic cuts (StudioLive, off by default)
+
+Automatic ring-out cuts happen only while all of these hold:
+1. `~/studiolive/dsp-config.json` on the mini contains `{"allow_auto_cuts": true}`. This is a deliberate edit by the system owner; the file is absent by default.
+2. An operator has double-tapped **ENABLE** under AUTOMATIC CUTS in the ROOM tab, within the last 30 minutes. A bridge restart, AUTO OFF, stopping the monitor, or changing channel turns cuts off again.
+3. The EQ calibration has been measured (`~/studiolive/calibration.json` exists).
+4. The monitor is running on the channel.
+
+Even then, a cut happens only for a non-harmonic, growing ring with confidence ≥ 0.9 lasting at least a second, inside the channel mid band's range:
+- **The cut:** 3 dB on the Hi-Q mid band, never below −6 dB, and never the GEQ.
+- **Spacing:** at least 10 s between cuts. The same ring is not cut again within a minute. At most 3 cuts per monitor run, and the bridge stops after 6 in 10 minutes.
+- **Mid band already in use:** if the mid band already cuts somewhere else, nothing is retuned; the tab says "operator attention needed".
+- **Records:** every cut appears on the tab's automatic-cuts line, is written to the bridge audit log, and can be undone with UNDO.
+
+Automatic cuts reduce the ringing frequency. They never change gain: if a ring persists, pull the gain back yourself.
+
 ### Live advice (StudioLive, display only)
 
 While the monitor runs, the tab lists slow recommendations for the selected channel. `jive-room -live-advice-file voice.wav` runs the same logic over a recording.

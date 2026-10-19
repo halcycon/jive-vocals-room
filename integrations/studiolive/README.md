@@ -17,6 +17,8 @@
 
 `sudoers/studiolive-dsp` is the narrow passwordless-restart rule. The installed version (2026-10-19) covers the bridge and Open Stage Control. The repository version also allows `systemctl restart studiolive-room.service`; reinstall it to enable that.
 
+`~/studiolive/dsp-config.json` on the mini is read by the bridge, and is absent by default. `{"allow_auto_cuts": true}` is the first of three locks for automatic cuts; the operator's ENABLE in the ROOM tab and a measured calibration are the others.
+
 `systemd/studiolive-room.service` runs the `jive-room` daemon for the ROOM tab. It uses `Wants=`/`After=` the bridge, so neither can stop the other. PA measurement stays disabled until `-play-pink-to` is added to `ExecStart`. Install it on the mini:
 
 ```bash

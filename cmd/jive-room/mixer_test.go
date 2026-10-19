@@ -15,9 +15,9 @@ func TestPrintMixerState(t *testing.T) {
 	now := time.Unix(0, 0)
 	for addr, v := range map[string]any{
 		"/channel/ch3/hpf":       int32(1),
-		"/channel/ch3/hpffreq":   float32(0.5),
+		"/channel/ch3/hpffreq":   float32(128.0 / 255),
 		"/channel/ch3/eqmid":     int32(1),
-		"/channel/ch3/eqmidfreq": float32(0.5),
+		"/channel/ch3/eqmidfreq": float32(128.0 / 255),
 		"/channel/ch3/eqmidgain": float32(102.0 / 255),
 		"/channel/ch3/eqmidhiq":  int32(1),
 		"/channel/ch3/post":      int32(0),
@@ -29,7 +29,7 @@ func TestPrintMixerState(t *testing.T) {
 	var b bytes.Buffer
 	printMixerState(&b, s, 3)
 	out := b.String()
-	for _, want := range []string{"CH3  (FireWire send pre-DSP)", "HPF   on   155 Hz", "Mid   on   954 Hz", "-3.0 dB (raw 102)", "hi-Q", "GEQ  on", "1.00 kHz    -7", "not yet verified"} {
+	for _, want := range []string{"CH3  (FireWire send pre-DSP)", "HPF   on   156 Hz", "Mid   on   959 Hz", "-3.0 dB (raw 102)", "hi-Q", "GEQ  on", "1.00 kHz    -7", "not yet verified"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in:\n%s", want, out)
 		}

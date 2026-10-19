@@ -250,6 +250,51 @@ class BridgeDSPTest(unittest.TestCase):
         time.sleep(0.3)
         self.assertEqual(self.written(), [])
 
+    def auto_apply(self, pid, changes):
+        self.bridge.send_dsp("/dsp/auto/apply", proposal(pid, "auto", changes))
+        return self.bridge.result("auto", pid)
+
+    def allow_auto(self, allowed=True):
+        with open(os.path.join(self.state_dir, "dsp-config.json"), "w") as f:
+            json.dump({"allow_auto_cuts": allowed}, f)
+
+    def test_auto_cuts_need_config_and_operator_enable(self):
+        cut = [("/channel/ch6/eqmidgain", 110)]
+        self.assertIn("not allowed", self.auto_apply("a1", cut)["reason"])
+        self.bridge.send_ui("/dsp/auto/enable", 1.0)
+        time.sleep(0.3)
+        self.assertIn("not allowed", self.auto_apply("a2", cut)["reason"])
+        self.allow_auto()
+        self.assertIn("not enabled", self.auto_apply("a3", cut)["reason"])
+        self.bridge.send_dsp("/dsp/auto/enable", 1.0)  # the DSP port can never enable
+        time.sleep(0.3)
+        self.assertIn("not enabled", self.auto_apply("a4", cut)["reason"])
+        self.assertEqual(self.written(), [])
+        self.bridge.send_ui("/dsp/auto/enable", 1.0)
+        time.sleep(0.3)
+        r = self.auto_apply("a5", cut)
+        self.assertEqual(r["status"], "verified", r)
+        self.assertEqual(self.fake.raw("/channel/ch6/eqmidgain"), 110)
+        self.bridge.send_dsp("/dsp/auto/disable")
+        time.sleep(0.3)
+        self.assertIn("not enabled", self.auto_apply("a6", [("/channel/ch7/eqmidgain", 110)])["reason"])
+        time.sleep(SETTLE)
+        self.bridge.send_dsp("/dsp/revert")
+        self.assertEqual(self.bridge.result("revert")["status"], "verified")
+        self.assertEqual(self.fake.raw("/channel/ch6/eqmidgain"), 128)
+
+    def test_auto_cuts_policy_and_spacing(self):
+        self.allow_auto()
+        self.bridge.send_ui("/dsp/auto/enable", 1.0)
+        time.sleep(0.3)
+        self.assertIn("only cut", self.auto_apply("b1", [("/channel/ch2/eqmidgain", 140)])["reason"])
+        self.assertIn("GEQ", self.auto_apply("b2", [("/channel/geq0/12", 110)])["reason"])
+        self.assertIn("mid band", self.auto_apply("b3", [("/channel/ch2/hpffreq", 110)])["reason"])
+        self.assertEqual(self.auto_apply("b4", [("/channel/ch2/eqmidgain", 110)])["status"], "verified")
+        time.sleep(SETTLE)
+        self.assertIn("apart", self.auto_apply("b5", [("/channel/ch3/eqmidgain", 110)])["reason"])
+        self.assertEqual(len(self.written()), 1)
+
     def test_rate_limit(self):
         self.assertEqual(self.submit_apply("r1", "profile", [("/channel/ch7/eqlowgain", 120)])["status"], "verified")
         r = self.submit_apply("r2", "profile", [("/channel/ch8/eqlowgain", 120)])

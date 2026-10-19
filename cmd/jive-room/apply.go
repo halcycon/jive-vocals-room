@@ -126,7 +126,7 @@ func printDiff(w io.Writer, changes []studiolive.WireChange, st *studiolive.Stat
 		cur, _ := st.Get(ctl)
 		line := fmt.Sprintf("  %-26s raw %3d -> %3d", ctl, cur.Raw, ch.Raw)
 		if cal, ok := studiolive.CalibrationFor(ctl); ok {
-			line += fmt.Sprintf("   (model %s -> %s)", formatUnit(cal.ToUnit(cur.Value), cal.Unit), formatUnit(cal.ToUnit(float64(ch.Raw)/255), cal.Unit))
+			line += fmt.Sprintf("   (%s %s -> %s)", calLabel(cal), formatUnit(cal.ToUnit(float64(cur.Raw)/255), cal.Unit), formatUnit(cal.ToUnit(float64(ch.Raw)/255), cal.Unit))
 		}
 		fmt.Fprintln(w, line)
 	}
