@@ -44,4 +44,6 @@ just deploy-studiolive      # copy to mixer@studiolive:~/.local/bin/jive-room, c
 
 The deploy script copies the binary and checks that it links. It touches no services.
 
+`just build-studiolive` also runs `just test-jack-dummy`. That starts `jackd --no-realtime -d dummy` inside the image and runs the JACK playback loopback and capture tests against it. Containers get a 512 MB `/dev/shm` because jackd needs about 107 MB of shared memory, and Podman's 64 MB default makes it crash with a bus error.
+
 How to use the analyser and the offline sound-check is in [Room-Guide.md](Room-Guide.md).

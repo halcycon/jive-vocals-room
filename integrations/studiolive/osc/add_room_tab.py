@@ -2,8 +2,9 @@
 """Add a read-only ROOM tab to the StudioLive Open Stage Control session.
 
 Every ROOM widget is display-only (interaction false, bypass true), so it never
-sends OSC. It shows strings that jive-room publishes under /dsp/ui/ringout/
-through the bridge's DSP port. Re-running replaces an existing ROOM tab.
+sends OSC. It shows strings that jive-room publishes under /dsp/ui/ringout/ and
+/dsp/ui/room/ through the bridge's DSP port. Re-running replaces an existing
+ROOM tab.
 
 Usage: add_room_tab.py <input session.json> <output session.json>
 """
@@ -68,8 +69,9 @@ def main(src, dst):
              "Raise gain yourself, slowly, and stop as soon as anything rings."),
         text(template, "room_status", "/dsp/ui/ringout/status", 104, 30, "font-size:12px;"),
         text(template, "room_updated", "/dsp/ui/ringout/updated", 136, 24, "font-size:10px;opacity:0.7;"),
+        text(template, "room_stage", "/dsp/ui/room/stage", 162, 28, "font-size:12px;font-style:italic;"),
     ]
-    top = 172
+    top = 198
     for i in range(1, 5):
         widgets.append(text(template, f"room_candidate_{i}", f"/dsp/ui/ringout/candidate/{i}", top, 32,
                             "font-size:13px;font-weight:600;"))

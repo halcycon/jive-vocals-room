@@ -57,6 +57,12 @@ func run(args []string) error {
 	bridgeAddr := fs.String("studiolive-bridge", studiolive.DefaultBridgeAddr, "bridge DSP state address")
 	ringOut := fs.Bool("studiolive-ringout", false, "read-only ring-out assistant on -studiolive-channel over JACK; proposes bounded cuts, never writes")
 	ringOutFile := fs.String("ringout-file", "", "run the ring-out detector over a WAV/FLAC recording and print candidates (offline)")
+	captureStage := fs.String("studiolive-capture", "", "record a stage (empty, occupied, presenter, verification) from -studiolive-channel over JACK into -session-dir; read-only")
+	captureSeconds := fs.Float64("capture-seconds", 15, "stage capture length in seconds (5–60; 10–20 recommended)")
+	sessionDir := fs.String("session-dir", "", "directory for stage captures; for analysis, fills unset -empty/-occupied/-presenter/-pa-*/-verification from it")
+	paMeasure := fs.Bool("studiolive-pa-measure", false, "play pink noise to -play-pink-to and record -studiolive-channel (the measurement mic); needs -confirm-playback")
+	playPinkTo := fs.String("play-pink-to", "", "JACK physical playback port or unique suffix for PA measurement, e.g. '_Ch 15_out'")
+	confirmPlayback := fs.Bool("confirm-playback", false, "confirm that the desk is set up for operator-started test-signal playback")
 	venue := fs.String("venue", "", "venue or room label")
 	out := fs.String("out", "jive-room-session.json", "session JSON path")
 	pink := room.DefaultPinkSpec()
@@ -84,6 +90,19 @@ func run(args []string) error {
 	}
 	if *ringOutFile != "" {
 		return runRingOutFile(os.Stdout, *ringOutFile)
+	}
+	if *captureStage != "" || *paMeasure {
+		return runStudioLiveCapture(fs, captureArgs{
+			stage: *captureStage, pa: *paMeasure, seconds: *captureSeconds, dir: *sessionDir,
+			sink: *playPinkTo, confirmed: *confirmPlayback, pink: pink, bridge: *bridgeAddr,
+			channel: *studioLiveChannel, sources: jackSources, client: *jackClient,
+		})
+	}
+	if *sessionDir != "" {
+		sessionDirInputs(*sessionDir, empty, occupied, presenter, paReference, paMeasured, verification)
+		if !flagSet(fs, "out") {
+			*out = filepath.Join(*sessionDir, "jive-room-session.json")
+		}
 	}
 	if *ringOut {
 		opts, err := liveOptions(string(live.BackendJACK), jackSources, *studioLiveChannel, *jackClient)
@@ -190,6 +209,14 @@ func run(args []string) error {
 		if err != nil {
 			return err
 		}
+		measM, err := room.Analyse(meas)
+		if err != nil {
+			return err
+		}
+		if s.Microphone.Calibration != nil {
+			measM = room.ApplyCalibration(measM, *s.Microphone.Calibration)
+		}
+		room.GatePAResponse(&pa, measM, s.EmptyRoom, room.StageEmpty)
 		spec, err := room.LoadTestSignalSpec(*paReference)
 		if err != nil {
 			return err

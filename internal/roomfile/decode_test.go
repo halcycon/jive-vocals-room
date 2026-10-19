@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/linuxmatters/jive-vocals/internal/room"
 )
 
 func TestDecodePCM16WAV(t *testing.T) {
@@ -24,6 +26,30 @@ func TestDecodePCM16WAV(t *testing.T) {
 	}
 	if pcm.SampleRate != rate || pcm.Channels != 1 || len(pcm.Samples) != len(samples) {
 		t.Fatalf("decoded metadata/samples: rate=%d channels=%d samples=%d", pcm.SampleRate, pcm.Channels, len(pcm.Samples))
+	}
+}
+
+func TestDecodeFloat32WAVFromWriteFloatWAV(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "capture-f32.wav")
+	const rate = 44100
+	in := make([]float64, rate/2)
+	for i := range in {
+		in[i] = 3e-5 * math.Sin(2*math.Pi*440*float64(i)/rate)
+	}
+	if err := room.WriteFloatWAV(path, room.PCM{Samples: in, SampleRate: rate, Channels: 1}); err != nil {
+		t.Fatal(err)
+	}
+	pcm, err := Decode(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pcm.SampleRate != rate || pcm.Channels != 1 || len(pcm.Samples) != len(in) {
+		t.Fatalf("rate=%d channels=%d samples=%d", pcm.SampleRate, pcm.Channels, len(pcm.Samples))
+	}
+	for i, v := range pcm.Samples {
+		if math.Abs(v-float64(float32(in[i]))) > 0 {
+			t.Fatalf("sample %d: %v != %v (float32 must round-trip exactly)", i, v, in[i])
+		}
 	}
 }
 

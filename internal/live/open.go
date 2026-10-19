@@ -27,11 +27,52 @@ type InputOptions struct {
 	// SampleTap, when set, receives each batch of newly captured frames as
 	// mono samples on the non-real-time consumer goroutine.
 	SampleTap func(mono []float64, rateHz int)
+	// RingFrames overrides DefaultRingFrames (power of two). Captures use a
+	// larger ring so a slow consumer tick cannot drop samples.
+	RingFrames int
+	// Playback, JACK only, registers one output port wired to Sink. Nothing is
+	// played until the analyser's Player.Play is called.
+	Playback *PlaybackRequest
+}
+
+// PlaybackRequest is an operator-started test signal for one physical sink.
+type PlaybackRequest struct {
+	Sink    string
+	Samples []float32
+}
+
+type PlaybackState int
+
+const (
+	PlaybackIdle PlaybackState = iota
+	PlaybackPlaying
+	PlaybackStopping
+	PlaybackDone
+)
+
+// Player is implemented by analysers opened with a PlaybackRequest.
+type Player interface {
+	Play() error
+	// StopPlayback fades out quickly, then outputs silence.
+	StopPlayback()
+	PlaybackState() PlaybackState
+	PlaybackFrames() int
+	PlaybackSink() string
+}
+
+func (o InputOptions) ringFrames() int {
+	if o.RingFrames > 0 {
+		return o.RingFrames
+	}
+	return DefaultRingFrames
 }
 
 func OpenInputAnalyser(opts InputOptions) (InputAnalyser, error) {
 	switch opts.Backend {
 	case "", BackendPipeWire:
+		if opts.Playback != nil {
+			return nil, fmt.Errorf("test-signal playback is only available on the jack backend")
+		}
 		return openPipeWire(opts)
 	case BackendJACK:
 		if len(opts.JACKSources) == 0 {
@@ -39,6 +80,9 @@ func OpenInputAnalyser(opts InputOptions) (InputAnalyser, error) {
 		}
 		if opts.JACKClientName == "" {
 			opts.JACKClientName = DefaultJACKClientName
+		}
+		if p := opts.Playback; p != nil && (p.Sink == "" || len(p.Samples) == 0) {
+			return nil, fmt.Errorf("playback needs a sink port and samples")
 		}
 		return openJACK(opts)
 	default:
@@ -66,11 +110,11 @@ func ResolveJACKSources(available, wanted []string) ([]string, error) {
 		}
 		switch len(match) {
 		case 0:
-			return nil, fmt.Errorf("jack source %q not found among %d physical capture ports", w, len(available))
+			return nil, fmt.Errorf("jack port %q not found among %d physical ports", w, len(available))
 		case 1:
 			out = append(out, match[0])
 		default:
-			return nil, fmt.Errorf("jack source %q is ambiguous: %s", w, strings.Join(match, ", "))
+			return nil, fmt.Errorf("jack port %q is ambiguous: %s", w, strings.Join(match, ", "))
 		}
 	}
 	return out, nil

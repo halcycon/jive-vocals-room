@@ -68,6 +68,7 @@ ensure_image() {
 
 run_opts=(
 	--rm
+	--shm-size=512m
 	-e TERM=xterm-256color
 	-e CGO_ENABLED=1
 	-e GOTOOLCHAIN=local

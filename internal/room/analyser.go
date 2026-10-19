@@ -11,6 +11,12 @@ var legacyCentresHz = []float64{80, 125, 195, 290, 440, 660, 1000, 1500, 2250, 3
 
 const minToneProminenceDB = 8.0
 
+// MinRoomEvidenceDBFS: an empty-room capture at or below this broadband RMS is
+// treated as converter floor, not room noise. Idle StudioLive inputs measure
+// about -114 dBFS; a microphone with any working gain sits well above -90.
+// Justified by that hardware observation only.
+const MinRoomEvidenceDBFS = -90.0
+
 func Analyse(p PCM) (Measurement, error) {
 	mono, err := analysisMono(p)
 	if err != nil {
@@ -174,8 +180,12 @@ func Recommend(empty Measurement, occupied *Measurement, pa *PAResponse, mixer M
 	if occupied != nil && occupied.BroadbandRMSDB-empty.BroadbandRMSDB > 3 {
 		result = append(result, Recommendation{Kind: "warning", Reason: "Occupied-room noise rose materially. Static EQ cannot remove audience chatter; check speech margin and microphone placement.", Confidence: .9, StartingPoint: true})
 	}
+	roomEvidence := empty.BroadbandRMSDB > MinRoomEvidenceDBFS
+	if !roomEvidence {
+		result = append(result, Recommendation{Kind: "warning", Reason: fmt.Sprintf("The empty-room capture is %.1f dBFS RMS, at or near the converter floor, so it is not room evidence. Check the microphone, input gain, and channel, then capture again. No room EQ is suggested from it.", empty.BroadbandRMSDB), Confidence: .9, StartingPoint: true})
+	}
 	low := strongestExcess(empty.LegacyBands, 125, 660)
-	if low.LevelDB > medianLevels(empty.LegacyBands)+4 {
+	if roomEvidence && low.LevelDB > medianLevels(empty.LegacyBands)+4 {
 		freq, minGainDB, maxGainDB := nearestMixerControl(low.FrequencyHz, mixer)
 		if freq > 0 {
 			gainDB := -min(3, low.LevelDB-medianLevels(empty.LegacyBands))

@@ -24,6 +24,24 @@ const char **jive_jack_capture_physical_sources(jive_jack_capture *c);
 void jive_jack_free_ports(const char **ports);
 const char *jive_jack_capture_client_name(jive_jack_capture *c);
 
+/* Optional single-port playback of one preloaded buffer (operator-started test
+ * signals only). enable must precede activate; load copies the samples once.
+ * The RT callback outputs silence unless playing, and stop fades out over
+ * JIVE_JACK_STOP_FADE_FRAMES before going silent. */
+#define JIVE_JACK_STOP_FADE_FRAMES 1024
+enum { JIVE_JACK_PLAY_IDLE = 0, JIVE_JACK_PLAY_PLAYING = 1, JIVE_JACK_PLAY_STOPPING = 2, JIVE_JACK_PLAY_DONE = 3 };
+int jive_jack_capture_enable_playback(jive_jack_capture *c);
+int jive_jack_capture_load_playback(jive_jack_capture *c, const float *samples, uint32_t nframes);
+int jive_jack_capture_connect_output(jive_jack_capture *c, const char *sink_port);
+int jive_jack_capture_play(jive_jack_capture *c);
+void jive_jack_capture_stop_playback(jive_jack_capture *c);
+int jive_jack_capture_playback_state(const jive_jack_capture *c);
+uint32_t jive_jack_capture_playback_position(const jive_jack_capture *c);
+const char *jive_jack_capture_output_name(jive_jack_capture *c);
+const char *jive_jack_capture_input_name(jive_jack_capture *c, uint32_t index);
+/* NULL-terminated list of physical playback (sink) ports; free with jive_jack_free_ports. */
+const char **jive_jack_capture_physical_sinks(jive_jack_capture *c);
+
 uint32_t jive_jack_capture_rate(const jive_jack_capture *c);
 uint32_t jive_jack_capture_quantum(const jive_jack_capture *c);
 uint32_t jive_jack_capture_channels(const jive_jack_capture *c);

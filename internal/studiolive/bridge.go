@@ -19,7 +19,8 @@ const (
 	addrReplayDone  = "/dsp/replay_done"
 
 	// The bridge expires subscribers after 15 s without a renewal.
-	subscribeInterval = 5 * time.Second
+	subscribeInterval     = 5 * time.Second
+	replayReadBufferBytes = 4 << 20
 )
 
 // BridgeClient is a read-only subscriber to the bridge's mixer-state stream.
@@ -41,6 +42,9 @@ func DialBridge(addr string) (*BridgeClient, error) {
 	if err != nil {
 		return nil, err
 	}
+	// The cache replay is a burst of ~800 small datagrams; a slow first read
+	// must not overflow the default receive buffer.
+	_ = conn.SetReadBuffer(replayReadBufferBytes)
 	return &BridgeClient{conn: conn, bridge: bridge, State: NewState()}, nil
 }
 

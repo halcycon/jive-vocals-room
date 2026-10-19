@@ -12,6 +12,7 @@ RUN apt-get update \
         g++ \
         gcc \
         git \
+        jackd2 \
         jq \
         just \
         libjack-jackd2-dev \

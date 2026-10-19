@@ -66,6 +66,11 @@ func writePASection(b *strings.Builder, pa *PAResponse) {
 		return
 	}
 	fmt.Fprint(b, "## PA / room response\n\n")
+	if pa.Status == paStatusInsufficientSignal && pa.SignalToNoise != nil {
+		fmt.Fprintf(b, "Method: averaged band-limited pink noise. Status: insufficient_signal.\n\nThe PA capture was a median %.1f dB above the %s capture across %.0f–%.0f Hz; at least %.0f dB is required. No transfer features were classified and no PA EQ is suggested. Check that the test signal reaches the PA and the measurement microphone, then raise the PA level on the desk and measure again.\n\n",
+			pa.SignalToNoise.MedianDB, pa.SignalToNoise.NoiseReference, pa.AnalysisLowHz, pa.AnalysisHighHz, pa.SignalToNoise.MinRequiredDB)
+		return
+	}
 	if pa.Status != paStatusMeasured {
 		fmt.Fprintf(b, "Method: %s. Status: %s. No PA/room transfer was measured in this session.\n\n", pa.Method, pa.Status)
 		return
@@ -74,6 +79,10 @@ func writePASection(b *strings.Builder, pa *PAResponse) {
 	fmt.Fprintf(b, "Transfer magnitude is the measured-to-reference power ratio, converted to dB, then shifted so the 500–2000 Hz median is 0 dB (shift applied: %+.1f dB). This is not an SPL calibration and does not recommend raising master gain.\n\n", pa.MidbandOffsetDB)
 	if pa.TestSignal != nil {
 		fmt.Fprintf(b, "Test signal: %s, %.1f s at %d Hz, headroom %.1f dB, seed %d, band-limited %.0f–%.0f Hz.\n\n", pa.TestSignal.Kind, pa.TestSignal.DurationSeconds, pa.TestSignal.SampleRateHz, pa.TestSignal.HeadroomDB, pa.TestSignal.Seed, pa.TestSignal.HighPassHz, pa.TestSignal.LowPassHz)
+	}
+	if g := pa.SignalToNoise; g != nil {
+		fmt.Fprintf(b, "Signal-to-noise against the %s capture: median %.1f dB; %.0f%% of the analysis band is at least %.0f dB above it. %d feature(s) below that margin were excluded.\n\n",
+			g.NoiseReference, g.MedianDB, 100*g.UsableFraction, g.MinRequiredDB, g.ExcludedFeatures)
 	}
 	if len(pa.Features) == 0 {
 		fmt.Fprint(b, "No broad excess, narrow resonance, or do-not-boost null was classified in the analysis band.\n\n")

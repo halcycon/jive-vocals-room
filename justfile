@@ -98,9 +98,19 @@ build-room-jack: _check-submodule
 test-jack: _check-submodule
     CGO_ENABLED=1 go test -tags jack ./internal/live/... ./cmd/jive-room
 
+# JACK tests against a dummy JACK server (playback loopback; no hardware)
+test-jack-dummy: _check-submodule
+    #!/usr/bin/env bash
+    set -euo pipefail
+    jackd --no-realtime -n jive-dummy -d dummy -r 44100 -p 1024 >/tmp/jive-jackd-dummy.log 2>&1 &
+    JACKD=$!
+    trap 'kill $JACKD 2>/dev/null; wait $JACKD 2>/dev/null || true' EXIT
+    sleep 1
+    JACK_DEFAULT_SERVER=jive-dummy JIVE_JACK_DUMMY=1 CGO_ENABLED=1 go test -count=1 -tags jack ./internal/live/... ./cmd/jive-room
+
 # Build the StudioLive Mac mini binary (JACK, glibc 2.39) in the Ubuntu 24.04 image
 build-studiolive:
-    JIVE_DEV_IMAGE=localhost/jive-room-ubuntu:24.04 JIVE_CONTAINERFILE=Containerfile.ubuntu ./scripts/dev-container.sh "just build-room-jack && just test-jack"
+    JIVE_DEV_IMAGE=localhost/jive-room-ubuntu:24.04 JIVE_CONTAINERFILE=Containerfile.ubuntu ./scripts/dev-container.sh "just build-room-jack && just test-jack && just test-jack-dummy"
 
 # Copy the JACK binary to the StudioLive Mac mini (default mixer@studiolive)
 deploy-studiolive host="mixer@studiolive":

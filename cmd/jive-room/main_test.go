@@ -18,11 +18,19 @@ func TestCLIGeneratePinkAndAnalysePAResponse(t *testing.T) {
 	refPath := filepath.Join(dir, "pink.wav")
 	outPath := filepath.Join(dir, "session.json")
 
+	// Room noise 40 dB below the PA test signal, so the PA capture clears the
+	// signal-to-noise gate the way a real measurement must.
 	emptySpec := room.DefaultPinkSpec()
 	emptySpec.DurationSeconds = 2
 	emptySpec.Seed = 11
-	emptySpec.HeadroomDB = 18
-	if _, err := room.WritePinkWAV(emptyPath, emptySpec); err != nil {
+	emptyPCM, err := room.GeneratePink(emptySpec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range emptyPCM.Samples {
+		emptyPCM.Samples[i] *= 0.01
+	}
+	if err := room.WriteWAV(emptyPath, emptyPCM); err != nil {
 		t.Fatal(err)
 	}
 	if err := run([]string{

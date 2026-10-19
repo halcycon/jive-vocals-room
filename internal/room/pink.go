@@ -174,6 +174,59 @@ func WriteWAV(path string, pcm PCM) error {
 	return binary.Write(f, binary.LittleEndian, pcm16)
 }
 
+// WriteFloatWAV writes mono IEEE float32 WAV (downmixing if needed), keeping
+// low-level captures such as a quiet room's noise floor without 16-bit
+// quantisation. Samples are written as captured, without clamping.
+func WriteFloatWAV(path string, pcm PCM) error {
+	if pcm.SampleRate <= 0 || pcm.Channels <= 0 {
+		return fmt.Errorf("invalid PCM metadata")
+	}
+	samples := pcm.Samples
+	if pcm.Channels != 1 {
+		samples = downmix(samples, pcm.Channels)
+	}
+	const maxFrames = (1<<32 - 1 - 64) / 4
+	if len(samples) > maxFrames {
+		return fmt.Errorf("capture too long for WAV: %d frames", len(samples))
+	}
+	f32 := make([]float32, len(samples))
+	for i, x := range samples {
+		f32[i] = float32(x)
+	}
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	dataBytes := uint32(len(f32) * 4) //nolint:gosec // bounded by maxFrames above
+	rate := uint32(pcm.SampleRate)    //nolint:gosec // positive, checked above
+	header := []any{
+		[4]byte{'R', 'I', 'F', 'F'},
+		uint32(4+26+12+8) + dataBytes,
+		[4]byte{'W', 'A', 'V', 'E'},
+		[4]byte{'f', 'm', 't', ' '},
+		uint32(18), uint16(3), uint16(1), rate, rate * 4, uint16(4), uint16(32), uint16(0),
+		[4]byte{'f', 'a', 'c', 't'},
+		uint32(4), uint32(len(f32)), //nolint:gosec // bounded by maxFrames above
+		[4]byte{'d', 'a', 't', 'a'},
+		dataBytes,
+	}
+	for _, v := range header {
+		if err = binary.Write(f, binary.LittleEndian, v); err != nil {
+			_ = f.Close()
+			return err
+		}
+	}
+	if err = binary.Write(f, binary.LittleEndian, f32); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err = f.Sync(); err != nil {
+		_ = f.Close()
+		return err
+	}
+	return f.Close()
+}
+
 func SignalSpecPath(wavPath string) string {
 	return wavPath[:len(wavPath)-len(filepath.Ext(wavPath))] + ".signal.json"
 }

@@ -171,6 +171,38 @@ jive-room -studiolive-watch                         # print each control change 
 
 Frequencies and gains come from a model built from the Open Stage Control knob labels (log frequency, linear ±15 dB gain). They have not yet been checked against the desk, and the raw 8-bit value is always shown alongside. GEQ bands are shown as raw steps from flat because their dB size is not yet known.
 
+### Sound-check captures over JACK (StudioLive)
+
+Record each stage straight from a desk channel into a session folder, then analyse the folder:
+
+```bash
+S=~/sessions/hall-2026-10-19
+jive-room -studiolive-capture empty     -studiolive-channel 12 -capture-seconds 15 -session-dir $S
+jive-room -studiolive-capture occupied  -studiolive-channel 12 -session-dir $S
+jive-room -studiolive-capture presenter -studiolive-channel 3  -session-dir $S
+jive-room -studiolive-pa-measure -studiolive-channel 12 -play-pink-to '_Ch 15_out' -confirm-playback -session-dir $S
+jive-room -session-dir $S -venue "Hall"        # writes $S/jive-room-session.json and .md
+# after applying EQ on the desk:
+jive-room -studiolive-capture verification -studiolive-channel 12 -session-dir $S
+jive-room -session-dir $S -applied-eq applied.json
+```
+
+- **Captures** are mono 32-bit float WAV. Each one has a `<name>.capture.json` sidecar recording the sample rate, sources, xruns, analysis drops, RMS, peak, and notes for clipping, converter-floor level, or xruns. If the analysis ring dropped any frames, the capture is **discarded** rather than saved with gaps. Ctrl+C saves nothing.
+- **PA measurement plays audio,** so it runs only with `-confirm-playback`. Without that flag it prints the pre-flight checklist instead:
+  1. Route the chosen FireWire return to only the PA you intend to measure.
+  2. Start with the fader down and raise it slowly.
+  3. Remember that jive-room never changes desk gain.
+
+  The pink noise is generated at the JACK rate and capped at −20 dBFS peak (`-pink-headroom-db` 20–24). It goes to exactly one named physical playback port. Ctrl+C fades it out over about 23 ms.
+
+  Only the steady part is recorded: from 0.5 s after the fade-in until the fade-out. The reference is saved as `pa-reference.wav` plus `.signal.json`, and the capture as `pa-measured.wav`. Use the measurement-mic channel, set up as for the empty room.
+- **Signal-to-noise gate.** The PA capture is compared with the empty-room capture on the same fine-spectrum axis.
+  - Any feature within ±1/6 octave of a point less than 10 dB above the room noise is excluded.
+  - If the median margin across 80 Hz–10 kHz is under 10 dB, the PA result is `insufficient_signal`, with no features and no PA EQ. Raise the PA level on the desk and measure again.
+- **Converter floor.** An empty-room capture at or below −90 dBFS RMS is treated as converter floor, not room noise. You get a warning and no room EQ.
+
+The ROOM tab's italic status line follows each capture as it runs.
+
 ### Ringing out a channel (StudioLive)
 
 ```bash

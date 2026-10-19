@@ -139,6 +139,7 @@ type PAResponse struct {
 	TransferFineDB     []SpectralPoint   `json:"transfer_fine_db,omitempty"`
 	TransferSmoothedDB []SpectralPoint   `json:"transfer_smoothed_db,omitempty"`
 	Features           []ResponseFeature `json:"features,omitempty"`
+	SignalToNoise      *PASignalToNoise  `json:"signal_to_noise,omitempty"`
 }
 
 type PresenterTest struct {

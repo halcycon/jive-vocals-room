@@ -182,7 +182,9 @@ The first real deployment is a PreSonus StudioLive 16.0.2 behind `mixer@studioli
   - `internal/feedback` (ring-out detector) and `studiolive.RingOutProposals` (cuts only: −3 dB per step, −6 dB channel-mid cap, proposable controls only, GEQ without a raw target until calibrated).
   - `jive-room -studiolive-ringout` / `-ringout-file`; `BridgeClient.PublishUI` accepts `/dsp/ui/...` only.
   - ROOM tab via `integrations/studiolive/osc/add_room_tab.py` and `just deploy-studiolive-osc` (v27 session; v26 path symlinked on the mini).
-  - Remaining: JACK stage captures, operator-started pink playback, real-ring validation.
+  - Stage captures, PA measurement with operator-started JACK playback (`-confirm-playback`, −20 dBFS peak cap, single named sink, stop fade), `-session-dir` analysis, PA signal-to-noise gate (`room.GatePAResponse`, 10 dB), and the −90 dBFS converter-floor gate (`room.MinRoomEvidenceDBFS`).
+  - Dummy-JACK tests run in the Ubuntu image (`just test-jack-dummy`).
+  - Not yet validated acoustically: the user's rig has no speakers connected yet. Phase 4 (assisted apply via the bridge) is next.
 - `integrations/studiolive/sudoers/studiolive-dsp` is a narrow passwordless-restart rule for the user to install. Deploy scripts try `sudo -n` first and fall back to SIGKILL plus `Restart=on-failure`.
 - Bridge changes live in `integrations/studiolive/bridge/`; deploy with `just deploy-studiolive-bridge`. That restart (SIGKILL plus `Restart=on-failure`, since there is no passwordless sudo) also restarts `studiolive-osc` through `Requires=`.
 - The user permits deploying to the mini and changing it while it is in testing with no production load. Never restart services during a show, and say so before restarting anything.
