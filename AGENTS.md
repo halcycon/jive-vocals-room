@@ -157,11 +157,13 @@ Done for the file-based path: capture-duration notes for the 10–20 s window, r
 
 #### 3. M2 live analyser, read-only
 
-- Confirm installed PipeWire development version/API before coding.
-- Build native PipeWire input capture with a C RT callback and fixed SPSC analysis ring.
-- Consume the ring off-thread for rolling levels/spectrum/tonality only; no output processing.
-- Report negotiated sample rate and graph quantum honestly. Show overruns/dropped analysis frames separately from audio xruns.
-- Keep live hardware tests tagged/optional and supply a fake/offline ring harness for CI.
+Implemented as a C SPSC analysis ring plus optional PipeWire input:
+
+- Development headers live in the Fedora Podman toolchain image (`Containerfile`, `just container`). Default host/CI builds do not link libpipewire. The image is Fedora because the prebuilt FFmpeg archive needs a current glibc.
+- `internal/live/rt` is RT-safe write / non-RT read. Overruns are analysis drops, counted separately from audio xruns.
+- `internal/live/pipewire` (`//go:build pipewire`) uses a native `pw_stream` input callback that only copies into the ring.
+- `jive-room -live` is a read-only TTY spectrum (or `-live-plain` lines). Rebuild with `just build-room-live` (or `just container build-live`). Operator guide: [`docs/Room-Guide.md`](docs/Room-Guide.md).
+- Hardware tests stay skipped unless explicitly enabled; CI uses the fake ring producer and C harness.
 
 #### 4. M3 pass-through and manual EQ
 

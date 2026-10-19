@@ -1,7 +1,7 @@
 # Jive Vocals - Just Commands
 
-# Import presenter integration tests if testdata/justfile exists (not in git)
-import? 'testdata/justfile'
+# PipeWire pkg-config on Fedora 1.6 injects -fno-strict-* which cgo rejects by default.
+export CGO_CFLAGS_ALLOW := "-fno-strict-overflow|-fno-strict-aliasing|-D_REENTRANT"
 
 # List commands
 default:
@@ -85,6 +85,24 @@ build: _check-submodule
 # Build the additive offline room-calibration command
 build-room: _check-submodule
     CGO_ENABLED=1 go build -o jive-room ./cmd/jive-room
+
+# Build jive-room with PipeWire input capture (needs libpipewire development headers)
+build-room-live: _check-submodule
+    CGO_ENABLED=1 go build -tags pipewire -o jive-room ./cmd/jive-room
+
+# Offline C ring harness (no PipeWire)
+test-rt:
+    gcc -std=c11 -O2 -Wall -Wextra -o /tmp/jive-rt-ring-test internal/live/rt/ring.c internal/live/rt/harness/main.c
+    /tmp/jive-rt-ring-test
+    @rm -f /tmp/jive-rt-ring-test
+
+# PipeWire-tagged Go tests (headers required; live hardware tests stay skipped)
+test-pipewire: _check-submodule
+    CGO_ENABLED=1 go test -tags pipewire ./internal/live/... ./cmd/jive-room
+
+# Podman/Docker toolchain (PipeWire headers, Go, gcc). See docs/dev-container.md
+container *args:
+    ./scripts/dev-container.sh {{args}}
 
 # Clean build artifacts and generated reports/data (.log, .json run-records, .jsonl sidecars)
 clean:

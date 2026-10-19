@@ -33,6 +33,8 @@
             jq
             just
             mediainfo
+            pkg-config
+            pipewire
           ];
         };
       }

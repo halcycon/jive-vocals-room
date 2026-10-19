@@ -12,12 +12,12 @@ Ambient noise, PA/room transfer response, speech masking, and feedback are separ
 
 - `internal/room`: pure slow analysis and domain model. It accepts interleaved PCM, produces fine 1/24-octave and legacy 15-band views, persistent tonal peaks, mains-hum diagnostics, comparisons, averaged pink-noise PA/room transfer magnitude, classified excesses/nulls, and conservative mixer-constrained advice.
 - `internal/roomfile`: non-real-time FFmpeg decode adapter for WAV/FLAC.
-- `internal/live`: interfaces and value types shared with future live implementations. It is scaffold only.
-- Future `internal/live/pipewire`: Go control-plane wrapper around a native C engine.
-- Future `internal/live/rt`: C-owned filter, callback, fixed storage, atomics, telemetry, and offline DSP harness.
-- `cmd/jive-room`: wizard/automation entry point. `cmd/jive-vocals` is unchanged.
+- `internal/live`: control-plane types, rolling ring consumer, and `OpenInputAnalyser`. Default builds return `ErrPipeWireDisabled`.
+- `internal/live/rt`: C SPSC analysis ring. Write is RT-safe; read is the non-RT consumer. Offline C harness in `internal/live/rt/harness`.
+- `internal/live/pipewire`: native PipeWire input capture (`//go:build pipewire`). The callback copies into the ring and never calls Go.
+- `cmd/jive-room`: wizard/automation entry point plus optional `-live` read-only analyser TUI. `cmd/jive-vocals` is unchanged.
 
-The live analyser is a side tap: the C callback copies into a fixed SPSC ring and continues processing. Slow Go analysis consumes the ring independently. Go is never called by the real-time callback.
+The live analyser is a side tap: the C callback copies into a fixed SPSC ring and continues processing. Slow Go analysis consumes the ring independently. Go is never called by the real-time callback. On a TTY, `-live` shows a 15-band spectrum and RMS sparkline with a freeze/Δ view so an engineer can watch a mixer cut settle. Freeze and peak-hold are display-only; they never change audio.
 
 ## Live signal and safety
 
@@ -33,9 +33,11 @@ At 48 kHz, the initial target is a 128-frame PipeWire quantum (2.67 ms). One inp
 
 ## Test strategy
 
-Pure analysis tests synthesize deterministic tones/noise and assert frequency, persistence, hum, band deltas, bounded advice, and JSON schema stability. Persistence and recommendation tests must include speech/music-like tonal false positives. The future C DSP core requires an offline harness with impulse/frequency-response tests, coefficient-update click tests, bypass equivalence, sanitizer runs, and allocation instrumentation. PipeWire integration tests verify negotiated formats, graph quantum, disconnect-to-bypass behavior, and loopback latency on tagged hardware; they do not turn hardware estimates into unit-test claims. Existing `just test`, `just lint`, and `just build` remain release gates.
+Pure analysis tests synthesize deterministic tones/noise and assert frequency, persistence, hum, band deltas, bounded advice, and JSON schema stability. Persistence and recommendation tests must include speech/music-like tonal false positives. The C analysis ring has an offline harness (`just test-rt`) plus a fake Go producer. PipeWire-tagged tests (`just test-pipewire` / `just container test-live`) compile native capture against development headers in the Fedora toolchain image; live hardware tests stay skipped unless `JIVE_LIVE_PW=1`. The future C DSP core requires an offline harness with impulse/frequency-response tests, coefficient-update click tests, bypass equivalence, sanitizer runs, and allocation instrumentation. Existing `just test`, `just lint`, and `just build` remain release gates; PipeWire is not a default-build dependency.
 
 ## Milestone status
 
-M0 boundaries and contracts are compilable. Offline M1 now covers empty/occupied captures, spectral views, deltas, tonal/hum diagnostics, presenter-margin and HPF/gain-risk advice, averaged pink-noise PA/room transfer analysis, relative mic calibration, operator-applied EQ verification, conservative recommendations, atomic JSON, a v1 golden schema fixture, and Markdown. Live capture, transport, DSP, and feedback suppression remain later work.
+M0 boundaries and contracts are compilable. Offline M1 covers empty/occupied/presenter/PA-response file analysis. M2 is a read-only live analyser: a C SPSC ring with an offline harness, tagged native PipeWire input capture, and a TTY spectrum TUI (freeze/Δ, peak-hold, RMS sparkline). Pass-through DSP and feedback suppression remain later work.
+
+Operator workflow: [Room-Guide.md](Room-Guide.md).
 

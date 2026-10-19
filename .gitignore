@@ -4,6 +4,8 @@
 jive-vocals-debug.log
 testdata/
 .bench/
+.gocache/
+.gomodcache/
 
 # ffmpeg-statigo libraries (downloaded, not committed)
 third_party/ffmpeg-statigo/lib/*/libffmpeg.a

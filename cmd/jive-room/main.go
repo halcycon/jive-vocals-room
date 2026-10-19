@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -25,8 +26,8 @@ func main() {
 type usageError struct{ error }
 
 func isUsage(err error) bool {
-	_, ok := err.(usageError)
-	return ok
+	var u usageError
+	return errors.As(err, &u)
 }
 
 func run(args []string) error {
@@ -42,6 +43,8 @@ func run(args []string) error {
 	micIdentity := fs.String("mic-identity", "", "optional measurement-microphone identity")
 	appliedEQ := fs.String("applied-eq", "", "optional operator-applied EQ JSON array")
 	verification := fs.String("verification", "", "optional verification WAV/FLAC captured after applying EQ")
+	liveInput := fs.Bool("live", false, "read-only PipeWire input analyser TUI; never plays audio or raises PA gain")
+	livePlain := fs.Bool("live-plain", false, "with -live, print one status line instead of the spectrum TUI")
 	venue := fs.String("venue", "", "venue or room label")
 	out := fs.String("out", "jive-room-session.json", "session JSON path")
 	pink := room.DefaultPinkSpec()
@@ -64,9 +67,12 @@ func run(args []string) error {
 		fmt.Println("This is a test signal only. Play it through the PA at a safe level you set. jive-room never starts playback or raises PA gain.")
 		return nil
 	}
+	if *liveInput {
+		return runLive(*livePlain)
+	}
 	if *empty == "" {
 		fs.Usage()
-		return usageError{fmt.Errorf("flag -empty is required unless -generate-pink is set")}
+		return usageError{fmt.Errorf("flag -empty is required unless -generate-pink or -live is set")}
 	}
 	if (*paReference == "") != (*paMeasured == "") {
 		return fmt.Errorf("pa response needs both -pa-reference and -pa-measured; jive-room will not play the test signal or raise PA gain")

@@ -2,11 +2,13 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/linuxmatters/jive-vocals/internal/live"
 	"github.com/linuxmatters/jive-vocals/internal/room"
 )
 
@@ -72,5 +74,15 @@ func TestCLIGeneratePinkAndAnalysePAResponse(t *testing.T) {
 func TestCLIRequiresEmptyUnlessGenerating(t *testing.T) {
 	if err := run(nil); err == nil {
 		t.Fatal("expected usage error")
+	}
+}
+
+func TestCLILiveRequiresPipeWireBuild(t *testing.T) {
+	if live.PipeWireBuilt() {
+		t.Skip("PipeWire capture is linked in this build")
+	}
+	err := run([]string{"-live"})
+	if !errors.Is(err, live.ErrPipeWireDisabled) {
+		t.Fatalf("got %v", err)
 	}
 }
