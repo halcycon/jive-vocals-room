@@ -75,8 +75,8 @@ func AnalysePAResponse(reference, measured PCM, cfg ResponseAnalysisConfig) (PAR
 	if err != nil {
 		return PAResponse{}, fmt.Errorf("measured: %w", err)
 	}
-	refFrames := spectra(refMono, reference.SampleRate)
-	measFrames := spectra(measMono, measured.SampleRate)
+	refFrames := spectra(refMono)
+	measFrames := spectra(measMono)
 	if len(refFrames) == 0 || len(measFrames) == 0 {
 		return PAResponse{}, fmt.Errorf("pa response needs enough samples for an 8192-point FFT")
 	}

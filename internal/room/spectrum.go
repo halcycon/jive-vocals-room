@@ -43,7 +43,7 @@ func db(v float64) float64 {
 	return max(floorDB, 20*math.Log10(v))
 }
 
-func spectra(s []float64, rate int) [][]float64 {
+func spectra(s []float64) [][]float64 {
 	var out [][]float64
 	for start := 0; start+fftSize <= len(s); start += frameHop {
 		x := make([]complex128, fftSize)

@@ -69,7 +69,7 @@ func GeneratePink(spec TestSignalSpec) (PCM, error) {
 		return PCM{}, err
 	}
 	n := int(math.Round(spec.DurationSeconds * float64(spec.SampleRateHz)))
-	rng := rand.New(rand.NewPCG(uint64(spec.Seed), uint64(spec.Seed)^0x9e3779b97f4a7c15))
+	rng := rand.New(rand.NewPCG(uint64(spec.Seed), uint64(spec.Seed)^0x9e3779b97f4a7c15)) //nolint:gosec // deterministic seeded test signal, not a security context
 	pink := pinkFilter{}
 	hpf := rbjHighPass(float64(spec.SampleRateHz), spec.HighPassHz, pinkFilterQ)
 	hpf2 := rbjHighPass(float64(spec.SampleRateHz), spec.HighPassHz, pinkFilterQ)
@@ -160,8 +160,8 @@ func WriteWAV(path string, pcm PCM) error {
 		uint32(16),
 		uint16(1),
 		uint16(channels),
-		uint32(pcm.SampleRate),
-		uint32(pcm.SampleRate * 2 * channels),
+		uint32(pcm.SampleRate),                //nolint:gosec // positive, checked above
+		uint32(pcm.SampleRate * 2 * channels), //nolint:gosec // channels is 1 after downmix
 		uint16(2 * channels),
 		uint16(16),
 		[4]byte{'d', 'a', 't', 'a'},

@@ -81,7 +81,7 @@ func testPinkSpec(seed int64) TestSignalSpec {
 }
 
 func bandEnergy(p PCM, loHz, hiHz float64) float64 {
-	frames := spectra(p.Samples, p.SampleRate)
+	frames := spectra(p.Samples)
 	avg := averagePower(frames)
 	var sum float64
 	n := 0

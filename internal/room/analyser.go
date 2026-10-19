@@ -16,7 +16,7 @@ func Analyse(p PCM) (Measurement, error) {
 	if err != nil {
 		return Measurement{}, err
 	}
-	frames := spectra(mono, p.SampleRate)
+	frames := spectra(mono)
 	avg := averagePower(frames)
 	fine := fractionalOctave(avg, p.SampleRate, 24)
 	legacy := aggregateAtCentres(avg, p.SampleRate, legacyCentresHz)

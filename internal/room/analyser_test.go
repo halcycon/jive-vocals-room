@@ -6,7 +6,7 @@ import (
 )
 
 func TestAnalyseDetectsPersistentFiftyHertzHum(t *testing.T) {
-	p := synthetic(48000, 3, func(i int, rate float64) float64 {
+	p := synthetic(3, func(i int, rate float64) float64 {
 		return .08*math.Sin(2*math.Pi*50*float64(i)/rate) + .04*math.Sin(2*math.Pi*100*float64(i)/rate)
 	})
 	m, err := Analyse(p)
@@ -28,8 +28,8 @@ func TestAnalyseDetectsPersistentFiftyHertzHum(t *testing.T) {
 }
 
 func TestCompareReportsOccupiedBandIncrease(t *testing.T) {
-	empty, _ := Analyse(synthetic(48000, 2, func(i int, r float64) float64 { return .001 * math.Sin(2*math.Pi*1000*float64(i)/r) }))
-	occupied, _ := Analyse(synthetic(48000, 2, func(i int, r float64) float64 { return .01 * math.Sin(2*math.Pi*1000*float64(i)/r) }))
+	empty, _ := Analyse(synthetic(2, func(i int, r float64) float64 { return .001 * math.Sin(2*math.Pi*1000*float64(i)/r) }))
+	occupied, _ := Analyse(synthetic(2, func(i int, r float64) float64 { return .01 * math.Sin(2*math.Pi*1000*float64(i)/r) }))
 	c := Compare(empty, occupied)
 	if c.BroadbandDeltaDB < 19.9 || c.BroadbandDeltaDB > 20.1 {
 		t.Fatalf("delta=%v", c.BroadbandDeltaDB)
@@ -40,7 +40,7 @@ func TestCompareReportsOccupiedBandIncrease(t *testing.T) {
 }
 
 func TestRecommendMapsCutToMixerAndDoesNotBoost(t *testing.T) {
-	m, _ := Analyse(synthetic(48000, 2, func(i int, r float64) float64 {
+	m, _ := Analyse(synthetic(2, func(i int, r float64) float64 {
 		return .1*math.Sin(2*math.Pi*250*float64(i)/r) + .005*math.Sin(2*math.Pi*2000*float64(i)/r)
 	}))
 	mixer := MixerCapability{Kind: MixerFixed3, Bands: []MixerBand{{Name: "low", FixedFrequencyHz: 200, MinGainDB: -12, MaxGainDB: 6}, {Name: "mid", FixedFrequencyHz: 2500, MinGainDB: -12, MaxGainDB: 6}, {Name: "high", FixedFrequencyHz: 10000, MinGainDB: -12, MaxGainDB: 6}}}
@@ -74,7 +74,8 @@ func TestAnalysePresenterUsesOccupiedNoiseOnSameAxis(t *testing.T) {
 	}
 }
 
-func synthetic(rate, seconds int, fn func(int, float64) float64) PCM {
+func synthetic(seconds int, fn func(int, float64) float64) PCM {
+	const rate = 48000
 	s := make([]float64, rate*seconds)
 	for i := range s {
 		s[i] = fn(i, float64(rate))

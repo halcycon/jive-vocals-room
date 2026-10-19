@@ -37,7 +37,7 @@ func writeWAV(path string, rate int, samples []int16) error {
 	if _, err = f.Write([]byte("RIFF")); err != nil {
 		return err
 	}
-	for _, v := range []any{uint32(36) + dataBytes, [4]byte{'W', 'A', 'V', 'E'}, [4]byte{'f', 'm', 't', ' '}, uint32(16), uint16(1), uint16(1), uint32(rate), uint32(rate * 2), uint16(2), uint16(16), [4]byte{'d', 'a', 't', 'a'}, dataBytes} {
+	for _, v := range []any{uint32(36) + dataBytes, [4]byte{'W', 'A', 'V', 'E'}, [4]byte{'f', 'm', 't', ' '}, uint32(16), uint16(1), uint16(1), uint32(rate), uint32(rate * 2), uint16(2), uint16(16), [4]byte{'d', 'a', 't', 'a'}, dataBytes} { //nolint:gosec // fixed 48 kHz fixture rate
 		if err = binary.Write(f, binary.LittleEndian, v); err != nil {
 			return err
 		}

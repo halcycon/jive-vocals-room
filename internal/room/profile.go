@@ -18,7 +18,7 @@ type Session struct {
 	CompletedStages   []string         `json:"completed_stages,omitempty"`
 	CaptureNotes      []string         `json:"capture_notes,omitempty"`
 	Device            DeviceMetadata   `json:"device"`
-	Microphone        Microphone       `json:"microphone,omitempty"`
+	Microphone        Microphone       `json:"microphone"`
 	EmptyRoom         Measurement      `json:"empty_room"`
 	OccupiedRoom      *Measurement     `json:"occupied_room,omitempty"`
 	PARoom            *PAResponse      `json:"pa_room_response,omitempty"`

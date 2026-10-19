@@ -35,11 +35,11 @@ func Decode(path string) (room.PCM, error) {
 }
 
 func frameSamples(frame *ffmpeg.AVFrame) ([]float64, error) {
-	format := ffmpeg.AVSampleFormat(frame.Format())
+	format := ffmpeg.AVSampleFormat(frame.Format()) //nolint:gosec // FFmpeg sample formats are small enum values
 	n, ch := frame.NbSamples(), frame.ChLayout().NbChannels()
 	planar := format == ffmpeg.AVSampleFmtS16P || format == ffmpeg.AVSampleFmtFltp || format == ffmpeg.AVSampleFmtS32P || format == ffmpeg.AVSampleFmtDblp
 	out := make([]float64, n*ch)
-	for c := 0; c < ch; c++ {
+	for c := range ch {
 		plane := 0
 		if planar {
 			plane = c
@@ -52,7 +52,7 @@ func frameSamples(frame *ffmpeg.AVFrame) ([]float64, error) {
 		if planar {
 			planeLength = n
 		}
-		for i := 0; i < n; i++ {
+		for i := range n {
 			index := i*ch + c
 			src := index
 			if planar {
