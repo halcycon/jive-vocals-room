@@ -22,7 +22,7 @@ systemd order: `studiolive-jack` → `studiolive-osclive` → `studiolive-bridge
 
 These came from the osclive source on the mini, not from documentation. Each one constrains apply logic.
 
-- **Value encoding.** Continuous controls are an 8-bit nibble pair: `raw = int(value * 255)` on write, `value = raw / 255` on read. Writing `0.5` stores raw 127, and the desk later reports `0.498`. Compare targets in raw 8-bit units, never as floats, or a "converge to target" loop never terminates.
+- **Value encoding.** Continuous controls are an 8-bit nibble pair: `raw = int(value * 255)` on write (truncating), `value = raw / 255` on read. Writing `0.5` stores raw 127, and the desk later reports `0.498`. Exact `r/255` values (float32 or float64) round-trip without loss. Compare targets in raw 8-bit units, never as floats, or a "converge to target" loop never terminates. `studiolive.ValueForRaw` sends mid-step values for margin.
 - **Writes rewrite the whole block.** `set_control` patches osclive's cached raw block and writes all of it: 120 bytes for an input channel, 64 for the GEQ. osclive refreshes a block only when the desk's status poll (about every 100 ms) flags it modified. A write issued just after a physical knob move can revert that move. The bridge must refuse to write a channel that changed on the desk within a settle window, and must verify read-back.
 - **Echo to every client.** `SLRemote.set_control` invokes every client's update callback immediately, including the writer's. When the desk confirms, a second update arrives only if the quantised value differs. Incoming state is never a trigger to write.
 - **Debug traces.** With `-d`, writes print `StudioLive: Set …` and desk-originated changes print `StudioLive: Upd …`. Use this to audit that `jive-room` produces no unexpected writes.
@@ -64,17 +64,35 @@ Phantom power, channel and FireWire routing (`firewire`, `post`, FireWire 15/16 
   - Operator lockout, an emergency disable, and undo.
   - If `jive-room` disconnects, the mixer is left untouched.
 
-## Bridge `/dsp` namespace (to implement)
+## Bridge `/dsp` namespace
 
-- Mixer state is forwarded from the bridge to `jive-room` on a localhost-only UDP port, and `jive-room` publishes `/dsp/...` UI values to the bridge.
-- `jive-room` never sends `/channel/...` addresses. The bridge drops any it receives from the DSP port.
-- A proposal is a versioned JSON object carrying engineering values, raw values, evidence, and confidence. Operator `/dsp/apply` and `/dsp/revert` come from the UI. The bridge clamps, snapshots, writes, verifies, and publishes the outcome.
-- `/bridge/resync` replays the cache to the UI only, as it does today.
+Implemented in [`integrations/studiolive/bridge/osc_tcp1_bridge_jack.py`](../integrations/studiolive/bridge/osc_tcp1_bridge_jack.py) (108 added lines against the deployed baseline) and installed on the mini with `just deploy-studiolive-bridge`.
+
+- The DSP state port is `127.0.0.1:9002` (`STUDIOLIVE_DSP_PORT`), bound to loopback only.
+- `/dsp/subscribe <port>` registers `127.0.0.1:<port>`, replays the state cache, sends `/dsp/replay_done <count>`, then forwards every osclive packet (bundles included). Subscribers lapse after 15 s without renewal, and at most 4 are accepted. `jive-room` renews every 5 s and sends `/dsp/unsubscribe` on exit.
+- The bridge replies from its shared output socket, not from port 9002. Clients must accept packets from the bridge's IP, not only from port 9002.
+- `/dsp/ui/...` received on the DSP port is forwarded to Open Stage Control only. Anything else received there is logged as `DSP port dropped … (read-only path)` and discarded. Nothing from the DSP port ever reaches osclive.
+- `/dsp/...` arriving from Open Stage Control on UDP 9000 is swallowed rather than forwarded to osclive. Phase 4 will handle `/dsp/apply` and `/dsp/revert` there.
+- `/bridge/resync` replays the cache to the UI only, as before.
+- **Restart side effect.** Without passwordless sudo, the deploy script restarts the bridge by SIGKILL plus `Restart=on-failure`. systemd 255 propagates that restart to `studiolive-osc` through `Requires=`, so Open Stage Control restarts too and browsers reconnect. Never deploy during a show.
+
+Still to design for phase 4: proposals as versioned JSON objects carrying engineering values, raw values, evidence, and confidence; operator `/dsp/apply` and `/dsp/revert`; and bridge-side clamp, snapshot, write, read-back verification, and outcome publishing.
+
+## Observed desk state (2026-10-19)
+
+Read with `jive-room -studiolive-state` through the new bridge port. The bridge replayed 799 cached states, of which 500 are known controls.
+
+- **Every channel's FireWire send is pre-DSP** (`post` off on ch1–12). A JACK capture of a channel therefore cannot show a channel EQ change. Verifying applied channel EQ needs post-DSP sends, which is an operator routing change, or an acoustic measurement.
+- **Untouched EQ gains sit at raw 128,** while osclive's GEQ reset leaves bands at raw 127. With the linear ±15 dB model, raw 128 reads as +0.06 dB. Which raw value is the desk's true 0 dB is a calibration question for each control family.
+- The GEQ is disabled and flat (all 31 bands at raw 127). Channels 6–12 have the HPF frequency at raw 96 (≈98 Hz on the model) with the HPF switched off.
 
 ## Phases
 
 1. **Read-only JACK analyser.** Mostly done. The `-tags jack` backend, `-studiolive-channel` / `-jack-source`, the Ubuntu 24.04 image (`just build-studiolive`) and `just deploy-studiolive` are in place. On the mini the analyser reports 44.1 kHz, 1024-frame periods, zero xruns and zero analysis drops over a 60-second soak, and leaves no ports behind on exit. Still open: verify the stereo channel-to-stream mapping with signal present (all 16 streams were idle at about −114 dBFS during testing).
-2. **Read-only mixer state.** Go OSC client of the bridge state stream, the StudioLive mixer model, and calibration tables.
+2. **Read-only mixer state.** Mostly done.
+   - `internal/osc` is the codec. `internal/studiolive` holds the control model, proposable allow-list, 8-bit raw handling, state mirror, read-only `BridgeClient`, and the session-label calibration model.
+   - `jive-room -studiolive-state [-studiolive-channel N]` prints the state, and `-studiolive-watch` streams changes.
+   - Still open: verify calibration against the desk (set `Verified` only after a check), find each family's true 0 dB raw value, and measure the GEQ dB range.
 3. **Advance mode, read-only.** Captures from JACK, the ring-out detector, operator-started pink playback, and a read-only ROOM tab in Open Stage Control.
 4. **Assisted apply and profiles.** Bridge `/dsp` apply/revert, snapshot, read-back verification, and profile save/load/push.
 5. **Live recommendations,** display only.

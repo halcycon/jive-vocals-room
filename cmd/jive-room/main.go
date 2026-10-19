@@ -12,6 +12,7 @@ import (
 	"github.com/linuxmatters/jive-vocals/internal/live"
 	"github.com/linuxmatters/jive-vocals/internal/room"
 	"github.com/linuxmatters/jive-vocals/internal/roomfile"
+	"github.com/linuxmatters/jive-vocals/internal/studiolive"
 )
 
 func main() {
@@ -51,6 +52,9 @@ func run(args []string) error {
 	fs.Var(&jackSources, "jack-source", "with -live-backend jack, a physical capture port name or unique suffix (repeatable)")
 	studioLiveChannel := fs.Int("studiolive-channel", 0, "StudioLive 16.0.2 input channel 1-12 to analyse over JACK (implies -live -live-backend jack)")
 	jackClient := fs.String("jack-client", live.DefaultJACKClientName, "JACK client name")
+	mixerState := fs.Bool("studiolive-state", false, "print StudioLive HPF/EQ/GEQ state read from the bridge (read-only), then exit")
+	mixerWatch := fs.Bool("studiolive-watch", false, "stream StudioLive control changes read from the bridge (read-only) until Ctrl+C")
+	bridgeAddr := fs.String("studiolive-bridge", studiolive.DefaultBridgeAddr, "bridge DSP state address")
 	venue := fs.String("venue", "", "venue or room label")
 	out := fs.String("out", "jive-room-session.json", "session JSON path")
 	pink := room.DefaultPinkSpec()
@@ -72,6 +76,9 @@ func run(args []string) error {
 		fmt.Printf("Wrote %s and %s\n", *generatePink, room.SignalSpecPath(*generatePink))
 		fmt.Println("This is a test signal only. Play it through the PA at a safe level you set. jive-room never starts playback or raises PA gain.")
 		return nil
+	}
+	if *mixerState || *mixerWatch {
+		return runMixerState(*bridgeAddr, *studioLiveChannel, *mixerWatch)
 	}
 	if *studioLiveChannel != 0 || len(jackSources) > 0 {
 		*liveInput = true

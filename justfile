@@ -106,6 +106,10 @@ build-studiolive:
 deploy-studiolive host="mixer@studiolive":
     ./scripts/deploy-studiolive.sh {{host}}
 
+# Install the DSP-enabled bridge on the Mac mini (restarts the bridge and Open Stage Control)
+deploy-studiolive-bridge host="mixer@studiolive":
+    ./scripts/deploy-studiolive-bridge.sh {{host}}
+
 # Offline C ring harness (no PipeWire)
 test-rt:
     gcc -std=c11 -O2 -Wall -Wextra -o /tmp/jive-rt-ring-test internal/live/rt/ring.c internal/live/rt/harness/main.c

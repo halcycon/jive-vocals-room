@@ -161,6 +161,16 @@ jive-room -studiolive-channel 10 -live-plain     # stereo channel 10, one line p
 jive-room -jack-source '_Ch 15_in' -jack-source '_Ch 16_in'   # explicit FireWire streams
 ```
 
+Reading the desk's own settings goes through the bridge's read-only DSP port:
+
+```bash
+jive-room -studiolive-state -studiolive-channel 3   # HPF / EQ for channel 3 plus the main GEQ
+jive-room -studiolive-state                         # all 12 channels
+jive-room -studiolive-watch                         # print each control change as it happens
+```
+
+Frequencies and gains come from a model built from the Open Stage Control knob labels (log frequency, linear ±15 dB gain). They have not yet been checked against the desk, and the raw 8-bit value is always shown alongside. GEQ bands are shown as raw steps from flat because their dB size is not yet known.
+
 `-studiolive-channel` maps desk channels 1–8 to FireWire streams 1–8, and stereo channels 9–12 to stream pairs 9/10, 11/12, 13/14 and 15/16. That mapping follows osclive's meter layout and has **not yet been verified with signal on the hardware**. To check it, play a source into one side of stereo channel 10 and confirm that `-jack-source '_Ch 11_in'` or `'_Ch 12_in'` moves. The `xruns` count covers the whole JACK graph, not just this client. Over SSH the client runs without real-time priority, as the bridge-launched RTA already does. A 60-second soak at 44.1 kHz with 1024-frame periods showed no xruns.
 
 ### When to stop adjusting a band

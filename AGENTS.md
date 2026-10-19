@@ -177,7 +177,9 @@ The first real deployment is a PreSonus StudioLive 16.0.2 behind `mixer@studioli
 - `integrations/studiolive/deployed/` is the deployed baseline; diff changes against it. Do not restart services or change files on the mini without the user's explicit go-ahead.
 - Phase order: read-only JACK analyser plus Ubuntu build image, then read-only mixer state and calibration, then the advance-mode ring-out and room check, then assisted apply with profiles, then live recommendations, and finally guarded automatic cuts (off by default).
 - Phase 1 status: `-tags jack` backend, `-studiolive-channel`, `just build-studiolive` (Ubuntu 24.04 image) and `just deploy-studiolive` (to `~/.local/bin/jive-room` on the mini) work. On the mini: 44.1 kHz, 1024 frames, zero xruns over a 60 s soak. Stereo stream mapping is still unverified because every input was idle. SSH sessions there get no RT priority (PAM limits not applied); a future service should set `LimitRTPRIO`/`LimitMEMLOCK` like `studiolive-jack.service`.
-- The user permits deploying to and running read-only clients on the mini. Still never restart the existing services or edit their files without asking.
+- Phase 2 status: `internal/osc` (codec), and in `internal/studiolive` the control model, `Proposable` allow-list, raw helpers, state mirror, read-only `BridgeClient`, and an unverified calibration model from the O-S-C v26 knob labels. `jive-room -studiolive-state` / `-studiolive-watch` work on the mini. The bridge's `/dsp` state port is deployed. Calibration verification, true 0 dB raw values, and the GEQ dB range are open.
+- Bridge changes live in `integrations/studiolive/bridge/`; deploy with `just deploy-studiolive-bridge`. That restart (SIGKILL plus `Restart=on-failure`, since there is no passwordless sudo) also restarts `studiolive-osc` through `Requires=`.
+- The user permits deploying to the mini and changing it while it is in testing with no production load. Never restart services during a show, and say so before restarting anything.
 
 ### Working rules specific to this fork
 

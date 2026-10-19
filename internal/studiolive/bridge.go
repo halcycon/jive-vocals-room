@@ -1,0 +1,124 @@
+package studiolive
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net"
+	"time"
+
+	"github.com/linuxmatters/jive-vocals/internal/osc"
+)
+
+const (
+	DefaultBridgeAddr = "127.0.0.1:9002"
+
+	addrSubscribe   = "/dsp/subscribe"
+	addrUnsubscribe = "/dsp/unsubscribe"
+	addrReplayDone  = "/dsp/replay_done"
+
+	// The bridge expires subscribers after 15 s without a renewal.
+	subscribeInterval = 5 * time.Second
+)
+
+// BridgeClient is a read-only subscriber to the bridge's mixer-state stream.
+// It sends only /dsp/subscribe and /dsp/unsubscribe; it has no path to emit
+// /channel/... writes.
+type BridgeClient struct {
+	conn   *net.UDPConn
+	bridge *net.UDPAddr
+	State  *State
+}
+
+// DialBridge opens a localhost UDP socket for the bridge's DSP port.
+func DialBridge(addr string) (*BridgeClient, error) {
+	bridge, err := net.ResolveUDPAddr("udp", addr)
+	if err != nil {
+		return nil, err
+	}
+	conn, err := net.ListenUDP("udp", &net.UDPAddr{IP: bridge.IP})
+	if err != nil {
+		return nil, err
+	}
+	return &BridgeClient{conn: conn, bridge: bridge, State: NewState()}, nil
+}
+
+func (c *BridgeClient) send(addr string, args ...any) error {
+	b, err := osc.Encode(osc.Message{Address: addr, Args: args})
+	if err != nil {
+		return err
+	}
+	_, err = c.conn.WriteToUDP(b, c.bridge)
+	return err
+}
+
+func (c *BridgeClient) port() int {
+	if a, ok := c.conn.LocalAddr().(*net.UDPAddr); ok {
+		return a.Port
+	}
+	return 0
+}
+
+// Update is one control change observed from the bridge.
+type Update struct {
+	Control Control
+	Value   Value
+}
+
+// Events are delivered from Run. Replayed reports the bridge's cache replay
+// count once the initial state is complete.
+type Events struct {
+	OnUpdate   func(Update)
+	OnReplayed func(count int)
+}
+
+// Run subscribes, renews the subscription, and applies updates to State until
+// ctx ends, then unsubscribes.
+func (c *BridgeClient) Run(ctx context.Context, ev Events) error {
+	if err := c.send(addrSubscribe, int32(c.port())); err != nil { //nolint:gosec // UDP port fits int32
+		return fmt.Errorf("subscribe to bridge %s: %w", c.bridge, err)
+	}
+	defer func() { _ = c.send(addrUnsubscribe, int32(c.port())) }() //nolint:gosec // UDP port fits int32
+	renew := time.Now().Add(subscribeInterval)
+	buf := make([]byte, 65535)
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil
+		}
+		if time.Now().After(renew) {
+			_ = c.send(addrSubscribe, int32(c.port())) //nolint:gosec // UDP port fits int32
+			renew = time.Now().Add(subscribeInterval)
+		}
+		_ = c.conn.SetReadDeadline(time.Now().Add(250 * time.Millisecond))
+		n, from, err := c.conn.ReadFromUDP(buf)
+		if err != nil {
+			var ne net.Error
+			if errors.As(err, &ne) && ne.Timeout() {
+				continue
+			}
+			return err
+		}
+		// The bridge replies from its shared output socket, not the DSP port.
+		if !from.IP.Equal(c.bridge.IP) {
+			continue
+		}
+		msgs, err := osc.Decode(buf[:n])
+		if err != nil {
+			continue
+		}
+		now := time.Now()
+		for _, m := range msgs {
+			if m.Address == addrReplayDone {
+				if count, ok := m.Float(0); ok && ev.OnReplayed != nil {
+					ev.OnReplayed(int(count))
+				}
+				continue
+			}
+			if ctl, v, changed := c.State.Apply(m, now); changed && ev.OnUpdate != nil {
+				ev.OnUpdate(Update{Control: ctl, Value: v})
+			}
+		}
+	}
+}
+
+func (c *BridgeClient) Close() error { return c.conn.Close() }

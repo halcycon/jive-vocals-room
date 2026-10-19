@@ -9,6 +9,8 @@
 - `systemd/` — `studiolive-{jack,osclive,bridge,osc}.service`
 - `studiolive-blacklist.conf` — `/etc/modprobe.d` entry blacklisting `snd_dice`
 
+`bridge/` holds the maintained bridge. It is the deployed baseline plus the read-only `/dsp` state port (`127.0.0.1:9002`). Install it with `just deploy-studiolive-bridge`, which restarts the bridge and, through systemd, Open Stage Control. Compare it with `git diff --no-index deployed/osc_tcp1_bridge_jack.py bridge/osc_tcp1_bridge_jack.py`. The mini keeps timestamped `.bak-*` copies, plus `osc_tcp1_bridge_jack.py.orig-20261019` (the pre-change original).
+
 `.reference/` (gitignored) holds a local copy of osclive 0.3.0 for reading only. It is MIT-licensed upstream at [martinspinler/osclive](https://github.com/martinspinler/osclive), commit `1da2ada424f5c16afc64b173bc5dbefcaffccd63`. Refresh it with:
 
 ```bash
