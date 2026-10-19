@@ -6,6 +6,7 @@ testdata/
 .bench/
 .gocache/
 .gomodcache/
+integrations/studiolive/.reference/
 
 # ffmpeg-statigo libraries (downloaded, not committed)
 third_party/ffmpeg-statigo/lib/*/libffmpeg.a

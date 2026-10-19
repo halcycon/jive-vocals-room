@@ -1,0 +1,17 @@
+[Unit]
+Description=StudioLive osclive control server
+After=studiolive-jack.service
+Requires=studiolive-jack.service
+
+[Service]
+Type=simple
+User=mixer
+Group=audio
+SupplementaryGroups=audio
+WorkingDirectory=/home/mixer
+ExecStart=/home/mixer/.venvs/osclive/bin/osclive
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

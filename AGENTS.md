@@ -28,19 +28,7 @@ Do not claim these are interchangeable. Static EQ cannot remove audience chatter
 - Do not open a PR against `linuxmatters/jive-vocals`.
 - The `ffmpeg-statigo` submodule is initialized at the upstream-pinned commit and its `lib/linux_amd64/libffmpeg.a` dependency has been downloaded. The submodule itself is clean.
 
-Current expected worktree changes:
-
-```text
-M  AGENTS.md
-M  justfile
-?? CODEX_TASK_JIVE_ROOM_LIVE_DSP.md
-?? cmd/jive-room/
-?? docs/Room-Live-DSP-Architecture.md
-?? docs/adr/
-?? internal/live/
-?? internal/room/
-?? internal/roomfile/
-```
+M0, M1, Stage 3, and M2 are committed and pushed on `feature/room-live-dsp-foundation`. Local lint tooling: `golangci-lint` v2.12.2 panics on host Go 1.27, so run `just lint` inside the dev container (Go 1.26) with the pinned tools installed under `.gocache/lintbin`. The only remaining lint finding is upstream's `idealDurationMin` revive name in `internal/processor/analyser_vad.go`; leave upstream code alone.
 
 Before publishing, create the user's GitHub fork through an authenticated browser/API, add it as SSH remote `origin`, verify its URL, then commit conventionally and push only to `origin`. A suitable first commit is `feat: add room DSP foundation and offline analyser`. Do not open a PR against `linuxmatters/jive-vocals`. That publishing step is done: origin is `halcycon/jive-vocals-room`, public, and the foundation commit is on `feature/room-live-dsp-foundation` and `main`.
 
@@ -175,6 +163,17 @@ Implemented as a C SPSC analysis ring plus optional PipeWire input:
 #### 5. M4 feedback work
 
 Start with operator-controlled ring-out. Never raise PA gain in software. Candidate detection must combine local prominence, persistence, growth, Q/bandwidth, frequency stability, harmonic context, and speech/music false-positive controls. Fixed notches require operator confirmation. Experimental dynamic notches remain disabled by default, preallocated, shallow-first, depth-limited, held, slowly released, smoothed, and fully diagnosed. Adaptive feedback cancellation remains research-only until M1–M5 are stable.
+
+### StudioLive deployment target
+
+The first real deployment is a PreSonus StudioLive 16.0.2 behind `mixer@studiolive`: a 2011 Mac mini on Ubuntu 24.04 with glibc 2.39, reachable over SSH/Tailscale. Read [ADR 0003](docs/adr/0003-studiolive-jack-mixer-actuator.md) and [`docs/StudioLive-Integration.md`](docs/StudioLive-Integration.md) before touching it.
+
+- FFADO/JACK (44.1 kHz, 1024 × 3) owns audio. osclive owns control over raw1394, and the Python bridge owns mixer state for Open Stage Control. Treat all three as infrastructure.
+- `jive-room` is a read-only JACK client. On this target the actuator is the desk's own HPF, channel EQ, and main GEQ. Proposals go through a bridge `/dsp` namespace; `jive-room` never sends `/channel/...` writes itself.
+- osclive values are 8-bit (`raw/255`). Compare in raw units. Writes rewrite the whole channel block from osclive's cache and are echoed to every client. Never write in response to incoming state.
+- Never automate phantom, routing (`firewire`, `post`, FireWire 15/16 source), mute, solo, `toMain`, faders (`gain`), sends, FX, masters, or `/channel/geq0/reset`.
+- `integrations/studiolive/deployed/` is the deployed baseline; diff changes against it. Do not restart services or change files on the mini without the user's explicit go-ahead.
+- Phase order: read-only JACK analyser plus Ubuntu build image, then read-only mixer state and calibration, then the advance-mode ring-out and room check, then assisted apply with profiles, then live recommendations, and finally guarded automatic cuts (off by default).
 
 ### Working rules specific to this fork
 

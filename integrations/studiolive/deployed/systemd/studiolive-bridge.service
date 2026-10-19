@@ -1,0 +1,21 @@
+[Unit]
+Description=StudioLive OSC/JACK bridge
+After=studiolive-osclive.service
+Requires=studiolive-osclive.service
+
+[Service]
+Type=simple
+User=mixer
+Group=audio
+SupplementaryGroups=audio
+WorkingDirectory=/home/mixer/studiolive
+Environment=STUDIOLIVE_ANALYSER=/home/mixer/studiolive/studiolive_spectrum_jack.py
+Environment=STUDIOLIVE_RECORDER=/home/mixer/studiolive/studiolive_jack_recorder.py
+Environment=STUDIOLIVE_RECORD_DIR=/home/mixer/Recordings/StudioLive
+ExecStartPre=/bin/sh -c 'until /usr/bin/nc -z 127.0.0.1 4301; do sleep 1; done'
+ExecStart=/home/mixer/.venvs/osclive/bin/python /home/mixer/studiolive/osc_tcp1_bridge_jack.py
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

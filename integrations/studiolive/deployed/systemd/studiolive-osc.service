@@ -1,0 +1,16 @@
+[Unit]
+Description=StudioLive Open Stage Control
+After=studiolive-bridge.service
+Requires=studiolive-bridge.service
+
+[Service]
+Type=simple
+User=mixer
+Group=mixer
+WorkingDirectory=/home/mixer/studiolive
+ExecStart=/usr/bin/node /home/mixer/.local/opt/open-stage-control/open-stage-control_1.30.3_linux-x64/resources/app/ --no-gui --load /home/mixer/studiolive/StudioLive1602_OpenStageControl_v26.json --port 8080 --osc-port 9001 --send 127.0.0.1:9000
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

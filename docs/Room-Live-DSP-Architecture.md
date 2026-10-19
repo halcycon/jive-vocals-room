@@ -39,5 +39,7 @@ Pure analysis tests synthesize deterministic tones/noise and assert frequency, p
 
 M0 boundaries and contracts are compilable. Offline M1 covers empty/occupied/presenter/PA-response file analysis. M2 is a read-only live analyser: a C SPSC ring with an offline harness, tagged native PipeWire input capture, and a TTY spectrum TUI (freeze/Δ, peak-hold, RMS sparkline). Pass-through DSP and feedback suppression remain later work.
 
+The first deployment target is a StudioLive 16.0.2 behind a Mac mini running FFADO/JACK and osclive. There, `jive-room` reads JACK input and proposes changes to the desk's own HPF, channel EQ and main graphic EQ through the existing OSC bridge, rather than inserting DSP into the signal path. See [ADR 0003](adr/0003-studiolive-jack-mixer-actuator.md) and [StudioLive-Integration.md](StudioLive-Integration.md).
+
 Operator workflow: [Room-Guide.md](Room-Guide.md).
 
