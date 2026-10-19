@@ -7,7 +7,7 @@ import (
 )
 
 func openPipeWire(opts InputOptions) (InputAnalyser, error) {
-	cap, err := pipewire.NewCapture(DefaultRingFrames, 1)
+	cap, err := pipewire.NewCapture(opts.ringFrames(), 1)
 	if err != nil {
 		return nil, err
 	}

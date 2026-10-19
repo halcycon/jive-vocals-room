@@ -134,10 +134,13 @@ func Proposable(c Control) bool {
 	return ok
 }
 
-// RawFromValue recovers osclive's 8-bit raw value from a received value
-// (osclive sends raw/255).
+// RawFromValue recovers the 8-bit raw value osclive stores for a value, using
+// osclive's own truncation (int(v*255)). Desk updates arrive as raw/255; the
+// immediate echo of a write carries the float that was sent, e.g. the
+// mid-step ValueForRaw(r), which must still read back as r. The epsilon
+// absorbs float32 rounding just below an exact step.
 func RawFromValue(v float64) uint8 {
-	return uint8(math.Round(math.Max(0, math.Min(1, v)) * 255))
+	return uint8(math.Floor(math.Max(0, math.Min(1, v))*255 + 1e-6))
 }
 
 // ValueForRaw is the float32 to send so osclive stores exactly raw r.

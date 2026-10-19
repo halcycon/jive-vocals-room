@@ -77,7 +77,42 @@ Implemented in [`integrations/studiolive/bridge/osc_tcp1_bridge_jack.py`](../int
 - **Passwordless restarts.** [`integrations/studiolive/sudoers/studiolive-dsp`](../integrations/studiolive/sudoers/studiolive-dsp) allows `mixer` to run exactly `systemctl restart studiolive-bridge.service` and `systemctl restart studiolive-osc.service`, and nothing else. Install it with `sudo install -m 0440 -o root -g root studiolive-dsp /etc/sudoers.d/` and check it with `sudo visudo -cf`. Both deploy scripts try it first.
 - **Restart side effect.** Without passwordless sudo, the deploy script restarts the bridge by SIGKILL plus `Restart=on-failure`. systemd 255 propagates that restart to `studiolive-osc` through `Requires=`, so Open Stage Control restarts too and browsers reconnect. Never deploy during a show.
 
-Still to design for phase 4: proposals as versioned JSON objects carrying engineering values, raw values, evidence, and confidence; operator `/dsp/apply` and `/dsp/revert`; and bridge-side clamp, snapshot, write, read-back verification, and outcome publishing.
+### Apply engine (phase 4)
+
+The bridge is the only component that writes to the desk on jive-room's behalf.
+
+- **Submit.** `/dsp/proposal/set <json>` (DSP port) carries a `jive-room-proposal/v1` object: `id`, `source` (`ringout` or `profile`), `summary`, and `changes` as `{address, raw}`. The bridge checks structure and allow-list, then holds a single proposal pending, which the ROOM tab shows.
+  - Allowed: channel HPF and EQ switches, frequencies and gains on ch1–12, and GEQ bands 1–31.
+  - Rejected: faders, phantom, routing, mute, solo, sends, GEQ enable or reset, main/aux/FX channels, and ring-out proposals touching anything but the mid band or GEQ bands.
+- **Apply.** `/dsp/apply <id>` (DSP port) or the ROOM tab's double-tap APPLY (`/dsp/apply 1`). The bridge refuses unless all of these hold:
+  - osclive is connected and no other apply is running;
+  - at least 1 s has passed since the last apply;
+  - every target channel has been quiet on the desk for 1 s (`APPLY_SETTLE_SECONDS`).
+
+  For ring-out proposals it also requires that gains only go down, by at most 26 raw steps (about 3 dB on the channel EQ model) per step, and that no boosting band is retuned.
+
+  It then snapshots current raw values, writes only the differences at mid-step values 50 ms apart, and waits up to 3 s for read-back to match each raw target exactly. The snapshot is pushed onto an undo stack (20 deep, saved as `~/studiolive/dsp-undo.json`), and a line is appended to the audit log `~/studiolive/dsp-apply.log` (rotated at 1 MB).
+- **Undo.** `/dsp/revert`, or the double-tap UNDO, restores the last snapshot through the same checks. The stack survives bridge restarts.
+- **Results.** `jive-room-apply-result/v1` reports go to DSP subscribers as `/dsp/result <json>`, and to the UI as `/dsp/ui/apply/status`. The status is one of `pending`, `rejected`, `refused`, `verified`, `unverified` or `failed`.
+- **Never.** The bridge does not write in response to incoming state, nor when a client disconnects. Raw `/channel/...` messages on the DSP port are dropped.
+- **Ring-out apply** (`jive-room -studiolive-ringout -ringout-submit`) is refused in jive-room while the EQ calibration is unverified. The GEQ is unmappable until its dB-per-step is measured. `-allow-unverified-calibration` overrides only the channel-mid check, and the operator takes responsibility for it.
+- **Profiles** need no calibration because they store the desk's own raw values:
+  - `-studiolive-profile-save` captures 199 controls (all channels plus GEQ), or one channel's HPF and EQ.
+  - `-studiolive-profile-push` prints a dry-run diff, and writes only with `-confirm-apply`.
+  - `-studiolive-undo -confirm-apply` reverts the bridge's last apply.
+- **Tests.**
+  - `integrations/studiolive/bridge/test_bridge_dsp.py` runs the real bridge against `fake_osclive.py` on spare ports (`just test-bridge`, or the mini's osclive venv). It covers apply, verify and undo; the allow-list; ring-out policy; the settle window; no writes from state, disconnects or direct sends; the UI buttons; rate limiting; undo across a restart; and, with `JIVE_ROOM_BIN`, the CLI profile save, push and undo.
+  - The fake mirrors osclive's echo-then-desk-confirmation behaviour.
+  - All nine tests passed on the mini.
+
+### First supervised write on the real desk
+
+Not done yet; it needs the operator present. Suggested procedure:
+1. `jive-room -studiolive-profile-save ~/studiolive/profiles/before.json`. A bench baseline already exists at `~/studiolive/profiles/bench-baseline-2026-10-19.json`.
+2. Make a test profile that changes one harmless control on an unused channel, e.g. ch8 `eqhighgain` raw 128 → 102 with the band switched off.
+3. `jive-room -studiolive-profile-push test.json`, check the diff, then add `-confirm-apply`. Watch the desk and the Open Stage Control EQ view, and run `journalctl -fu studiolive-osclive` to confirm only that control was set.
+4. Run `jive-room -studiolive-undo -confirm-apply`, or double-tap UNDO, and confirm the value returns.
+5. Repeat with the UI's APPLY button, using a pending proposal from `-studiolive-profile-push` … or from ring-out with `-ringout-submit`.
 
 ## Observed desk state (2026-10-19)
 
@@ -108,7 +143,10 @@ Read with `jive-room -studiolive-state` through the new bridge port. The bridge 
      - The bench session analyses to PA `insufficient_signal` (median 0.2 dB margin) plus a converter-floor warning, with no EQ.
    - Not yet seen: a real ring, an acoustic PA measurement, or the ROOM tab rendered in a browser. These all need speakers.
    - osclive does not publish the masters block over OSC, so `monFirewire` cannot be checked before playback.
-4. **Assisted apply and profiles.** Bridge `/dsp` apply/revert, snapshot, read-back verification, and profile save/load/push.
+4. **Assisted apply and profiles.** Built and tested against the fake osclive; see "Apply engine".
+   - Deployed on the mini.
+   - Real-desk checks so far are non-writing only: saving a profile, and pushing it back as "already matches".
+   - Still open: the first supervised real write, and verifying calibration so ring-out proposals can be applied.
 5. **Live recommendations,** display only.
 6. **Guarded automatic cuts,** off by default.
 

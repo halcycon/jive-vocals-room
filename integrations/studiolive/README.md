@@ -11,6 +11,8 @@
 
 `bridge/` holds the maintained bridge. It is the deployed baseline plus the read-only `/dsp` state port (`127.0.0.1:9002`). Install it with `just deploy-studiolive-bridge`, which restarts the bridge and, through systemd, Open Stage Control. Compare it with `git diff --no-index deployed/osc_tcp1_bridge_jack.py bridge/osc_tcp1_bridge_jack.py`. The mini keeps timestamped `.bak-*` copies, plus `osc_tcp1_bridge_jack.py.orig-20261019` (the pre-change original).
 
+`bridge/fake_osclive.py` is a hardware-free osclive stand-in: it speaks OSC/TCP 1.0, echoes writes, then sends a truncated desk confirmation, and can simulate knob moves. `bridge/test_bridge_dsp.py` runs the real bridge against it on spare ports (`just test-bridge python=/path/with/python-osc`, or `/home/mixer/.venvs/osclive/bin/python` on the mini). Set `JIVE_ROOM_BIN` to include the CLI profile test. The bridge reads `STUDIOLIVE_OSCLIVE_PORT`, `STUDIOLIVE_UI_LISTEN_PORT`, `STUDIOLIVE_UI_PORT`, `STUDIOLIVE_DSP_PORT`, and `STUDIOLIVE_DSP_STATE_DIR`, which default to the production values.
+
 `osc/` holds `add_room_tab.py`, which adds a display-only ROOM tab to the v26 baseline session, and its generated output, `StudioLive1602_OpenStageControl_v27.json`. `just deploy-studiolive-osc` regenerates the session and installs it. Because the unit still loads `..._v26.json`, the mini has `..._v26.json -> ..._v27.json` as a symlink, with the original at `..._v26.json.orig`. The v26 baseline already repeats some widget IDs (`select_ch1`…), and the ROOM tab adds none.
 
 `sudoers/studiolive-dsp` is the narrow passwordless-restart rule for the bridge and Open Stage Control units. It is installed on the mini as `/etc/sudoers.d/studiolive-dsp` (2026-10-19), and both deploy scripts use it.

@@ -145,7 +145,57 @@ func (p *ringOutPublisher) publish(status string, cs []feedback.Candidate, chann
 	}
 }
 
-func runRingOutLive(opts live.InputOptions, channel int, bridgeAddr string) error {
+type ringOutSubmitMode struct {
+	enabled, allowUnverified bool
+}
+
+const ringOutSubmitInterval = 2 * time.Second
+
+// ringOutSubmitter holds the most confident ring's channel-mid proposal
+// pending on the bridge, so the operator can press APPLY in the ROOM tab.
+type ringOutSubmitter struct {
+	mode       ringOutSubmitMode
+	bridge     *studiolive.BridgeClient
+	last       string
+	lastAt     time.Time
+	lastRefuse string
+}
+
+func (s *ringOutSubmitter) consider(cs []feedback.Candidate, channel int, st *studiolive.State) {
+	if !s.mode.enabled || s.bridge == nil {
+		return
+	}
+	for _, c := range cs {
+		if c.Harmonic || c.Confidence < 0.5 {
+			continue
+		}
+		for _, p := range studiolive.RingOutProposals(c.FrequencyHz, channel, st) {
+			if p.Target != studiolive.TargetChannelMid {
+				continue
+			}
+			w, err := studiolive.ProposalFromRingOut(p, s.mode.allowUnverified, time.Now())
+			if err != nil {
+				if msg := err.Error(); msg != s.lastRefuse {
+					s.lastRefuse = msg
+					fmt.Printf("  not submitted for APPLY: %v\n", err)
+				}
+				return
+			}
+			if p.Summary == s.last || time.Since(s.lastAt) < ringOutSubmitInterval {
+				return
+			}
+			if err := s.bridge.SubmitProposal(w); err != nil {
+				fmt.Printf("  submit failed: %v\n", err)
+				return
+			}
+			s.last, s.lastAt = p.Summary, time.Now()
+			fmt.Printf("  submitted %q for APPLY in the ROOM tab (bridge re-checks: cuts only, desk quiet, snapshot + undo)\n", p.Summary)
+			return
+		}
+	}
+}
+
+func runRingOutLive(opts live.InputOptions, channel int, bridgeAddr string, submit ringOutSubmitMode) error {
 	if channel == 0 {
 		return usageError{fmt.Errorf("-studiolive-ringout needs -studiolive-channel 1..%d", studiolive.InputChannels)}
 	}
@@ -154,12 +204,28 @@ func runRingOutLive(opts live.InputOptions, channel int, bridgeAddr string) erro
 
 	var st *studiolive.State
 	pub := &ringOutPublisher{}
+	sub := &ringOutSubmitter{mode: submit}
 	if bc, err := studiolive.DialBridge(bridgeAddr); err != nil {
 		fmt.Fprintf(os.Stderr, "bridge %s unavailable (%v); continuing without mixer state or UI\n", bridgeAddr, err)
 	} else {
-		defer bc.Close()
-		st, pub.bridge = bc.State, bc
-		go func() { _ = bc.Run(ctx, studiolive.Events{}) }()
+		st, pub.bridge, sub.bridge = bc.State, bc, bc
+		runDone := make(chan struct{})
+		defer func() {
+			stop()
+			select {
+			case <-runDone:
+			case <-time.After(time.Second):
+			}
+			_ = bc.Close()
+		}()
+		go func() {
+			defer close(runDone)
+			_ = bc.Run(ctx, studiolive.Events{OnResult: func(r studiolive.ApplyResult) {
+				if r.Action != "submit" {
+					fmt.Printf("  bridge: %s %s %s %s\n", r.Action, r.ID, r.Status, r.Reason)
+				}
+			}})
+		}()
 	}
 
 	var det *feedback.Detector
@@ -194,6 +260,7 @@ func runRingOutLive(opts live.InputOptions, channel int, bridgeAddr string) erro
 			ringOutReport(os.Stdout, cs, channel, st)
 		}
 		pub.publish(status, cs, channel, st, changed)
+		sub.consider(cs, channel, st)
 	}); err != nil {
 		return err
 	}

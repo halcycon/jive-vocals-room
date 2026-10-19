@@ -203,6 +203,21 @@ jive-room -session-dir $S -applied-eq applied.json
 
 The ROOM tab's italic status line follows each capture as it runs.
 
+### Profiles, apply, and undo (StudioLive)
+
+```bash
+jive-room -studiolive-profile-save ~/studiolive/profiles/hall.json -profile-label "Hall, Sunday"   # read-only
+jive-room -studiolive-profile-push ~/studiolive/profiles/hall.json                 # dry run: shows the diff
+jive-room -studiolive-profile-push ~/studiolive/profiles/hall.json -confirm-apply  # write through the bridge
+jive-room -studiolive-undo -confirm-apply                                          # put the previous values back
+```
+
+- **Profiles** hold only channel HPF and EQ plus the 31 GEQ bands, as the desk's own raw values. A push never touches faders, phantom, routing, mute, solo, sends, or GEQ enable or reset.
+- **The bridge does the writing.** It refuses while a target channel is being adjusted on the desk, snapshots the current values first, writes only what differs, and confirms each value on the desk before reporting `verified`.
+- **Undo** reverts the most recent apply, and the bridge remembers 20 of them, even across restarts.
+- **The ROOM tab** shows the pending proposal and the last result. APPLY and UNDO need a double-tap.
+- **Ring-out cuts** can be held pending for APPLY with `-ringout-submit`, but only once the EQ calibration has been verified against the desk. Until then they are refused, and graphic EQ cuts are never mappable.
+
 ### Ringing out a channel (StudioLive)
 
 ```bash

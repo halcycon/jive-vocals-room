@@ -63,6 +63,13 @@ func run(args []string) error {
 	paMeasure := fs.Bool("studiolive-pa-measure", false, "play pink noise to -play-pink-to and record -studiolive-channel (the measurement mic); needs -confirm-playback")
 	playPinkTo := fs.String("play-pink-to", "", "JACK physical playback port or unique suffix for PA measurement, e.g. '_Ch 15_out'")
 	confirmPlayback := fs.Bool("confirm-playback", false, "confirm that the desk is set up for operator-started test-signal playback")
+	profileSave := fs.String("studiolive-profile-save", "", "save the desk's HPF/EQ (and GEQ when no -studiolive-channel) to a profile JSON; read-only")
+	profileLabel := fs.String("profile-label", "", "label stored in a saved profile")
+	profilePush := fs.String("studiolive-profile-push", "", "show how a profile differs from the desk; with -confirm-apply, write it through the bridge")
+	undo := fs.Bool("studiolive-undo", false, "with -confirm-apply, revert the bridge's most recent apply")
+	confirmApply := fs.Bool("confirm-apply", false, "confirm writing to the desk through the bridge (snapshot and undo included)")
+	ringOutSubmit := fs.Bool("ringout-submit", false, "with -studiolive-ringout, hold the top channel-mid proposal pending for APPLY in the ROOM tab")
+	allowUnverified := fs.Bool("allow-unverified-calibration", false, "let -ringout-submit use the unverified EQ calibration model (operator takes responsibility)")
 	venue := fs.String("venue", "", "venue or room label")
 	out := fs.String("out", "jive-room-session.json", "session JSON path")
 	pink := room.DefaultPinkSpec()
@@ -104,12 +111,21 @@ func run(args []string) error {
 			*out = filepath.Join(*sessionDir, "jive-room-session.json")
 		}
 	}
+	if *profileSave != "" {
+		return runProfileSave(*bridgeAddr, *profileSave, *studioLiveChannel, *profileLabel)
+	}
+	if *profilePush != "" {
+		return runProfilePush(*bridgeAddr, *profilePush, *confirmApply)
+	}
+	if *undo {
+		return runUndo(*bridgeAddr, *confirmApply)
+	}
 	if *ringOut {
 		opts, err := liveOptions(string(live.BackendJACK), jackSources, *studioLiveChannel, *jackClient)
 		if err != nil {
 			return usageError{err}
 		}
-		return runRingOutLive(opts, *studioLiveChannel, *bridgeAddr)
+		return runRingOutLive(opts, *studioLiveChannel, *bridgeAddr, ringOutSubmitMode{enabled: *ringOutSubmit, allowUnverified: *allowUnverified})
 	}
 	if *studioLiveChannel != 0 || len(jackSources) > 0 {
 		*liveInput = true

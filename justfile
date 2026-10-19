@@ -116,6 +116,10 @@ build-studiolive:
 deploy-studiolive host="mixer@studiolive":
     ./scripts/deploy-studiolive.sh {{host}}
 
+# Bridge apply-engine tests against fake_osclive (needs a python with python-osc; set JIVE_ROOM_BIN for the CLI test)
+test-bridge python="python3":
+    cd integrations/studiolive/bridge && {{python}} -m unittest -v test_bridge_dsp && rm -rf __pycache__
+
 # Install the DSP-enabled bridge on the Mac mini (restarts the bridge and Open Stage Control)
 deploy-studiolive-bridge host="mixer@studiolive":
     ./scripts/deploy-studiolive-bridge.sh {{host}}

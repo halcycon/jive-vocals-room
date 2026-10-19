@@ -60,13 +60,6 @@ type Player interface {
 	PlaybackSink() string
 }
 
-func (o InputOptions) ringFrames() int {
-	if o.RingFrames > 0 {
-		return o.RingFrames
-	}
-	return DefaultRingFrames
-}
-
 func OpenInputAnalyser(opts InputOptions) (InputAnalyser, error) {
 	switch opts.Backend {
 	case "", BackendPipeWire:

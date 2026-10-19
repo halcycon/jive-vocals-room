@@ -184,7 +184,14 @@ The first real deployment is a PreSonus StudioLive 16.0.2 behind `mixer@studioli
   - ROOM tab via `integrations/studiolive/osc/add_room_tab.py` and `just deploy-studiolive-osc` (v27 session; v26 path symlinked on the mini).
   - Stage captures, PA measurement with operator-started JACK playback (`-confirm-playback`, −20 dBFS peak cap, single named sink, stop fade), `-session-dir` analysis, PA signal-to-noise gate (`room.GatePAResponse`, 10 dB), and the −90 dBFS converter-floor gate (`room.MinRoomEvidenceDBFS`).
   - Dummy-JACK tests run in the Ubuntu image (`just test-jack-dummy`).
-  - Not yet validated acoustically: the user's rig has no speakers connected yet. Phase 4 (assisted apply via the bridge) is next.
+  - Not yet validated acoustically: the user's rig has no speakers connected yet.
+- Phase 4 status:
+  - **Bridge apply engine:** `jive-room-proposal/v1` submit, apply and revert; allow-list; settle window; ring-out cut-only policy; snapshot; mid-step writes; exact read-back; persisted undo; audit log; `/dsp/result`.
+  - **jive-room:** `studiolive.WireProposal` / `ProposalFromRingOut` (refuses unverified calibration) / profiles, plus CLI `-studiolive-profile-save`, `-studiolive-profile-push`, `-studiolive-undo`, `-confirm-apply` and `-ringout-submit`.
+  - **ROOM tab:** double-tap APPLY and UNDO.
+  - **Tests:** `integrations/studiolive/bridge/test_bridge_dsp.py` with `fake_osclive.py` (`just test-bridge`).
+  - **Real desk:** non-writing checks only. Do the first real write only with the user present; the procedure is in `docs/StudioLive-Integration.md`.
+- `RawFromValue` truncates like osclive (`floor(v*255+1e-6)`), so the echo of a mid-step write reads back as the intended raw value.
 - `integrations/studiolive/sudoers/studiolive-dsp` is a narrow passwordless-restart rule for the user to install. Deploy scripts try `sudo -n` first and fall back to SIGKILL plus `Restart=on-failure`.
 - Bridge changes live in `integrations/studiolive/bridge/`; deploy with `just deploy-studiolive-bridge`. That restart (SIGKILL plus `Restart=on-failure`, since there is no passwordless sudo) also restarts `studiolive-osc` through `Requires=`.
 - The user permits deploying to the mini and changing it while it is in testing with no production load. Never restart services during a show, and say so before restarting anything.

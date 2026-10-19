@@ -81,6 +81,12 @@ func TestValueForRawLandsOnEveryStep(t *testing.T) {
 		if RawFromValue(float64(r)/255) != uint8(r) {
 			t.Fatalf("read-back raw %d", r)
 		}
+		if RawFromValue(float64(float32(float64(r)/255))) != uint8(r) {
+			t.Fatalf("float32 desk update for raw %d", r)
+		}
+		if RawFromValue(float64(ValueForRaw(uint8(r)))) != uint8(r) {
+			t.Fatalf("echo of our own mid-step write for raw %d read back as %d", r, RawFromValue(float64(ValueForRaw(uint8(r)))))
+		}
 	}
 	if pythonOscliveStore(0.5) != GEQFlatRaw {
 		t.Fatal("osclive's 0.5 reset should store raw 127")

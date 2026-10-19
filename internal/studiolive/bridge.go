@@ -2,6 +2,7 @@ package studiolive
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -23,9 +24,10 @@ const (
 	replayReadBufferBytes = 4 << 20
 )
 
-// BridgeClient is a read-only subscriber to the bridge's mixer-state stream.
-// It sends only /dsp/subscribe, /dsp/unsubscribe, and /dsp/ui/... display
-// values; it has no path to emit /channel/... writes.
+// BridgeClient subscribes to the bridge's mixer-state stream. It sends
+// /dsp/subscribe, /dsp/unsubscribe, /dsp/ui/... display values, and
+// allow-listed proposals plus apply/revert requests that the bridge validates
+// and executes. It has no path to emit /channel/... writes itself.
 type BridgeClient struct {
 	conn   *net.UDPConn
 	bridge *net.UDPAddr
@@ -87,6 +89,8 @@ type Update struct {
 type Events struct {
 	OnUpdate   func(Update)
 	OnReplayed func(count int)
+	// OnResult receives the bridge's submit/apply/revert reports.
+	OnResult func(ApplyResult)
 }
 
 // Run subscribes, renews the subscription, and applies updates to State until
@@ -128,6 +132,18 @@ func (c *BridgeClient) Run(ctx context.Context, ev Events) error {
 			if m.Address == addrReplayDone {
 				if count, ok := m.Float(0); ok && ev.OnReplayed != nil {
 					ev.OnReplayed(int(count))
+				}
+				continue
+			}
+			if m.Address == addrResult {
+				if len(m.Args) != 1 || ev.OnResult == nil {
+					continue
+				}
+				if s, ok := m.Args[0].(string); ok {
+					var r ApplyResult
+					if json.Unmarshal([]byte(s), &r) == nil {
+						ev.OnResult(r)
+					}
 				}
 				continue
 			}
