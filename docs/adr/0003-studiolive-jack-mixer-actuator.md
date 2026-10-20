@@ -4,7 +4,7 @@ Status: accepted
 
 ## Context
 
-The first deployment target is a 2011 Mac mini (Xubuntu 24.04, glibc 2.39, i5-2415M) bridging a PreSonus StudioLive 16.0.2 over FireWire. FFADO/JACK owns the audio stream (44.1 kHz, 1024 frames, 3 periods); `snd_dice` is blacklisted because ALSA capture fails with I/O errors. osclive owns mixer control over raw1394 and serves OSC/TCP on 4301. A Python bridge caches mixer state and serves Open Stage Control over UDP 9000/9001. See [`../StudioLive-Integration.md`](../StudioLive-Integration.md).
+The first deployment target is a 2011 Mac mini (Xubuntu 24.04, glibc 2.39, i5-2415M) bridging a PreSonus StudioLive 16.0.2 over FireWire. FFADO/JACK owns the audio stream (originally 44.1 kHz, 1024 frames, 3 periods; 48 kHz, 128 frames, 4 periods since 2026-10-20, when FireWire playback to the desk was proven at that rate); `snd_dice` is blacklisted because ALSA capture fails with I/O errors. osclive owns mixer control over raw1394 and serves OSC/TCP on 4301. A Python bridge caches mixer state and serves Open Stage Control over UDP 9000/9001. See [`../StudioLive-Integration.md`](../StudioLive-Integration.md).
 
 ## Decision
 

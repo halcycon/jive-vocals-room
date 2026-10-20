@@ -170,7 +170,7 @@ Start with operator-controlled ring-out. Never raise PA gain in software. Candid
 
 The first real deployment is a PreSonus StudioLive 16.0.2 behind `mixer@studiolive`: a 2011 Mac mini on Ubuntu 24.04 with glibc 2.39, reachable over SSH/Tailscale. Read [ADR 0003](docs/adr/0003-studiolive-jack-mixer-actuator.md) and [`docs/StudioLive-Integration.md`](docs/StudioLive-Integration.md) before touching it.
 
-- FFADO/JACK (44.1 kHz, 1024 × 3) owns audio. osclive owns control over raw1394, and the Python bridge owns mixer state for Open Stage Control. Treat all three as infrastructure.
+- FFADO/JACK (48 kHz, 128 × 4 since 2026-10-20; FireWire playback to the desk is proven at 48 kHz) owns audio. osclive owns control over raw1394, and the Python bridge owns mixer state for Open Stage Control. Treat all three as infrastructure.
 - `jive-room` is a read-only JACK client. On this target the actuator is the desk's own HPF, channel EQ, and main GEQ. Proposals go through a bridge `/dsp` namespace; `jive-room` never sends `/channel/...` writes itself.
 - osclive values are 8-bit (`raw/255`). Compare in raw units. Writes rewrite the whole channel block from osclive's cache and are echoed to every client. Never write in response to incoming state.
 - Never automate phantom, routing (`firewire`, `post`, FireWire 15/16 source), mute, solo, `toMain`, faders (`gain`), sends, FX, masters, or `/channel/geq0/reset`.
@@ -201,7 +201,7 @@ The first real deployment is a PreSonus StudioLive 16.0.2 behind `mixer@studioli
   - **Built:** the bridge's `/dsp/auto/apply` with three locks (`dsp-config.json` `allow_auto_cuts`, an enable from the UI port only that expires after 30 min, and verified calibration in jive-room), plus `autoCutter` daemon guards and the ROOM tab's ENABLE (double-tap) and AUTO OFF.
   - **Hardware:** the gate was verified on the real desk with the operator present; `dsp-config.json` was removed afterwards.
   - **Calibration measured 2026-10-20** on ch8 via mini headphone out (left channel only) into ch8's line input, with `-calibration-play alsa:plughw:0,0`. `~/studiolive/calibration.json` is loaded by every command, so automatic cuts and ring-out APPLY are unlocked, subject to their other gates.
-  - **FireWire routing:** a channel's FireWire send is zero while its input is FireWire, so calibration needs an analogue input. ch12 has `firewire` = 1 at the user's request (reserving 15/16 for FireWire playback); which return feeds it is still unidentified.
+  - **FireWire routing:** a channel's FireWire send is zero while its input is FireWire, so calibration needs an analogue input. ch12 has `firewire` = 1 at the user's request, reserving 15/16 for the mini's playback via the `studiolive-fw-sink` user service (PipeWire JACK-tunnel sink "StudioLive FW 15/16", default sink, patched to returns 15/16). FireWire-input channels show a constant bogus input-meter level; judge playback only on Output metering (meters 13–16 are Main L/R).
   - **Open:** an unexplained 22.05 kHz pattern seen on capture streams 15/16 on 2026-10-19.
 - Measured calibration is `studiolive.CalibrationFile` (`jive-room-studiolive-calibration/v1`), loaded from `-studiolive-calibration`, default `~/studiolive/calibration.json`. `UseCalibration` marks the measured controls verified; `ResetCalibration` restores the model.
 - Never use `pkill -f` with a pattern that also appears in your own SSH command line; it kills the session. Use `pkill -x` or PIDs.

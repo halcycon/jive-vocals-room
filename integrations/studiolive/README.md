@@ -31,6 +31,21 @@ ssh -t mixer@studiolive '
   sudo systemctl daemon-reload && sudo systemctl enable --now studiolive-room.service'
 ```
 
+`systemd/studiolive-jack.service` is the maintained JACK unit: `jackd -d firewire -r 48000 -p 128 -n 4` (the baseline ran 44.1 kHz, 1024 × 3). FireWire playback to the desk is proven at 48 kHz.
+
+`fwsink/` makes the mini's desktop audio play into FireWire returns 15/16 (desk ch12, FireWire input on). `fw-sink.conf` is a standalone PipeWire client running the JACK-tunnel module as the sink "StudioLive FW 15/16". `studiolive-fw-sink.py` supervises it, patches its two ports to returns 15/16, and restarts it after a JACK restart. `studiolive-fw-sink.service` is a systemd user unit. Install as `mixer`:
+
+```bash
+cd integrations/studiolive/fwsink
+ssh mixer@studiolive 'mkdir -p ~/.local/bin ~/.config/studiolive ~/.config/systemd/user'
+scp studiolive-fw-sink.py mixer@studiolive:.local/bin/studiolive-fw-sink
+scp fw-sink.conf mixer@studiolive:.config/studiolive/fw-sink.conf
+scp studiolive-fw-sink.service mixer@studiolive:.config/systemd/user/
+ssh mixer@studiolive 'chmod +x ~/.local/bin/studiolive-fw-sink &&
+  systemctl --user daemon-reload && systemctl --user enable --now studiolive-fw-sink &&
+  pactl set-default-sink studiolive_fw_1516'
+```
+
 `.reference/` (gitignored) holds a local copy of osclive 0.3.0 for reading only. It is MIT-licensed upstream at [martinspinler/osclive](https://github.com/martinspinler/osclive), commit `1da2ada424f5c16afc64b173bc5dbefcaffccd63`. Refresh it with:
 
 ```bash

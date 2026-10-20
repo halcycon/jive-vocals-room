@@ -1,0 +1,15 @@
+[Unit]
+Description=StudioLive FireWire returns 15/16 as a desktop audio sink
+# User unit (~/.config/systemd/user). The system studiolive-jack service owns
+# JACK; this only tunnels a PipeWire sink into it and patches returns 15/16.
+Wants=pipewire.service
+After=pipewire.service
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/studiolive-fw-sink
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target

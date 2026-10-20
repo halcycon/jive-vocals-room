@@ -149,7 +149,7 @@ Keys:
 
 Non-TTY (or `-live-plain`) prints one line per analysis tick instead.
 
-Each analysis window spans about 0.9 s (nine overlapping 8192-point FFT frames), so a tonal candidate must persist across most of that window before it is shown. A tone line reports prominence relative to the local spectrum, not an absolute level. On an idle StudioLive input the analyser reports steady lines at a quarter and an eighth of the sample rate (11025 and 5512 Hz at 44.1 kHz) on a −116 dBFS floor. These are real converter or stream idle tones, but they are far below anything audible.
+Each analysis window spans about 0.9 s (nine overlapping 8192-point FFT frames), so a tonal candidate must persist across most of that window before it is shown. A tone line reports prominence relative to the local spectrum, not an absolute level. On an idle StudioLive input the analyser reports steady lines at a quarter and an eighth of the sample rate (11025 and 5512 Hz at 44.1 kHz; 12 and 6 kHz at 48 kHz) on a −116 dBFS floor. These are real converter or stream idle tones, but they are far below anything audible.
 
 ### StudioLive over JACK
 
