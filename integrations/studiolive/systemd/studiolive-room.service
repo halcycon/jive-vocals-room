@@ -14,10 +14,9 @@ SupplementaryGroups=audio
 LimitRTPRIO=95
 LimitMEMLOCK=infinity
 WorkingDirectory=/home/mixer/studiolive
-# PA measurement from the ROOM tab stays disabled until a playback sink is
-# configured here, e.g. append:  -play-pink-to "_Ch 16_out"
-# Choose the FireWire return that your desk routes to the PA you measure.
-ExecStart=/home/mixer/.local/bin/jive-room -studiolive-daemon -capture-seconds 15
+# PA measurement plays pink noise into FireWire return 1 (desk ch1), the only
+# return that plays cleanly on this desk. Route ch1 to only the PA you measure.
+ExecStart=/home/mixer/.local/bin/jive-room -studiolive-daemon -capture-seconds 15 -play-pink-to "_Ch 1_out"
 Restart=on-failure
 RestartSec=3
 
