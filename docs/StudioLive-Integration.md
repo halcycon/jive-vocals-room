@@ -14,7 +14,7 @@ StudioLive ── FireWire ──┬── raw1394 ── osclive (OSC/TCP 4301,
                                          ├── studiolive_rta (Python, 31 bands)
                                          ├── recorder (16 ch RF64)
                                          ├── jive-room (new, read-only client)
-                                         └── pipewire-fw (desktop sink → FireWire returns 15/16)
+                                         └── pipewire-fw (mono desktop sink → FireWire return 1)
 ```
 
 systemd order: `studiolive-jack` → `studiolive-osclive` → `studiolive-bridge` → `studiolive-osc`. The new service must use `Wants=`/`After=` so a `jive-room` failure never stops the existing stack, and the bridge must never depend on it.
@@ -197,9 +197,11 @@ jive-room -studiolive-calibrate -studiolive-channel 8 -calibration-play alsa:plu
 
 ### FireWire routing facts (2026-10-20)
 
-- **FireWire playback (computer to desk) works at 48 kHz.** JACK now runs `-r 48000 -p 128 -n 4`, the rate the DICE reports at power-up and the settings of the FFADO list report that first confirmed 16.0.2 playback. A −12 dBFS tone sent to all 16 returns reached Main from channels 1, 2 and 12 (15/16) with each fader up, read on Output metering (meters 13/14 and 15/16 are Main L and R). 44.1 kHz was never conclusively shown broken, because the earlier tests read input meters.
-- **The input meters lie for FireWire-input channels.** Every FireWire-input channel except 1 shows a constant high input-meter level whatever JACK sends, including digital silence, and that level never reaches Main. Judge FireWire playback only from Output metering or what you hear. A user override of `xmit_transfer_delay = 4` in `~/.ffado/configuration` changed nothing and was removed.
-- **Desktop audio on 15/16.** ch12 has FireWire input on and is reserved for the mini's playback. The `studiolive-fw-sink` user service (`integrations/studiolive/fwsink/`) runs a PipeWire JACK-tunnel sink, "StudioLive FW 15/16", patches it to returns 15/16, and re-creates the sink after any JACK restart (verified by killing jackd). It is the mini's default sink. It makes only those two JACK connections. Bring up ch12's fader and Main deliberately; nothing here moves desk controls.
+- **Only FireWire return 1 is usable.** With JACK at `-r 48000 -p 128 -n 4` (the DICE's power-up rate and the settings of the FFADO list report that confirmed 16.0.2 playback), a tone on return 1 appears on ch1's input meter and on Main. At 44.1 kHz it did not. Every other channel with FireWire return on shows a constant high level whenever any playback stream runs, with trims fully down, and that level does reach Main. It appears with digital silence on all returns.
+- **It is not the Linux driver.** The kernel `snd-dice` driver (playback works with `--period-size=512 --buffer-size=2048`; capture still fails with I/O errors) gives exactly the same result as FFADO: silence on all 16 returns, channels 2–16 high, ch1 clean. Two independent IEC 61883-6 implementations agree, so the fault is on the desk side (FireWire firmware or hardware). A user override of `xmit_transfer_delay = 4` in `~/.ffado/configuration` changed nothing and was removed. Next step: test returns with PreSonus Universal Control on a Mac or Windows machine, and check the desk's firmware version. This may be related to the half-sample-rate pattern seen on capture streams 15/16.
+- **Keep FireWire return off on channels 2–16.** Their junk reaches Main.
+- **Desktop audio on channel 1.** The `studiolive-fw-sink` user service (`integrations/studiolive/fwsink/`) runs a mono PipeWire JACK-tunnel sink, "StudioLive FW 1 (mono)" (`studiolive_fw_1`), patches it to return 1, and re-creates the sink after any JACK restart (verified by killing jackd). It is the mini's default sink and makes only that one connection. A desktop test tone reached ch1 and Main (2026-10-20). Because ch1 now takes FireWire, its analogue input is out of the mix. Bring up ch1's fader and Main deliberately; nothing here moves desk controls.
+- Output metering shows Main L on meters 13/14 and Main R on 15/16, post Main fader.
 - A channel's FireWire send carries nothing while its input is FireWire, even post-DSP. Streams 15/16 read exact digital zero with ch12 on FireWire input. So a FireWire-return loop cannot measure EQ; calibration needs an analogue input.
 - With an analogue input, `post` = 1 does give a post-EQ send: a +15 dB high-band boost raised the 4.5–5.6 kHz band of `_Ch 8_in` by 15.7 dB.
 - osclive sends no channel meter levels to the bridge, so desk meters are only visible on the desk.

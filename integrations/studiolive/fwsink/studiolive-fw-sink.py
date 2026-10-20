@@ -1,10 +1,10 @@
 #!/home/mixer/.venvs/osclive/bin/python
-"""Keep the "StudioLive FW 15/16" desktop sink alive and patched.
+"""Keep the "StudioLive FW 1 (mono)" desktop sink alive and patched.
 
 Runs the PipeWire JACK-tunnel client from fw-sink.conf and connects its JACK
-ports to the desk's FireWire returns 15 and 16. The tunnel does not survive a
+port to the desk's FireWire return 1. The tunnel does not survive a
 JACK restart, so whenever JACK goes away or the tunnel ports stay missing the
-PipeWire client is restarted. Only these two connections are ever made; no
+PipeWire client is restarted. Only this connection is ever made; no
 other JACK routing is touched.
 """
 
@@ -19,7 +19,7 @@ import jack
 
 CONF = os.path.expanduser("~/.config/studiolive/fw-sink.conf")
 CLIENT = "pipewire-fw"
-PATCH = {"playback_FL": "_Ch 15_out", "playback_FR": "_Ch 16_out"}
+PATCH = {"playback_MONO": "_Ch 1_out"}
 POLL_SECONDS = 2
 TUNNEL_START_GRACE_SECONDS = 10
 
