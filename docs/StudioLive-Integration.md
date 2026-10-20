@@ -172,7 +172,37 @@ Read with `jive-room -studiolive-state` through the new bridge port. The bridge 
 - **Calibration flat step and restore:** wrote ch8's HPF/EQ through the bridge and restored the snapshot, including HPF freq 96.
 - **Automatic-cut gate:** as above.
 
-### Calibration attempts (not yet successful)
+### Calibration result (2026-10-20, ch8)
+
+`~/studiolive/calibration.json` was measured on ch8 with the cable loop below; a copy is in `integrations/studiolive/calibration/`. Every command now loads it, so channel HPF/EQ mappings are verified, and ring-out APPLY and automatic cuts can use them:
+
+```bash
+jive-room -studiolive-calibrate -studiolive-channel 8 -calibration-play alsa:plughw:0,0 -confirm-apply -confirm-playback
+```
+
+- **Loop:** the Mac mini's headphone output is cabled into ch8's line input. The reference plays on the **left channel only**: a stereo (TRS) plug in a balanced input delivers L−R, so identical noise on both sides cancels to silence, which is why yesterday's attempt failed. Mini Master volume was 100%, giving about −56 dBFS RMS at `_Ch 8_in`, 58 dB above the converter floor. ch8 `post` was on during the run and switched back off afterwards.
+- **Measured against the model:**
+
+  | Control | Measured |
+  | --- | --- |
+  | Low frequency | 34–624 Hz |
+  | Mid frequency | 241 Hz–4.5 kHz |
+  | High frequency | 1.26–19.2 kHz |
+  | Gain (all bands) | about −15 to +16.6 dB in ~0.125 dB steps; raw 128 reads +0.7 to +0.9 dB, so 0 dB is near raw 123 |
+  | HPF −3 dB corner | 28 Hz (raw 32) to 1.11 kHz; no corner was found within the band at raw 0 |
+
+  The knob-label model underestimated the top of the low and mid ranges.
+- **Scope:** measured on one mono channel and assumed identical on all input channels. The GEQ remains uncalibrated (the main mix is not on FireWire).
+
+### FireWire routing facts (2026-10-20)
+
+- With ch12's `firewire` input on, pink noise played to all 16 FireWire returns raised ch12's meter, as the operator saw. So the returns do reach a channel switched to FireWire input. Which return feeds ch12 is not yet identified: feeding digital silence to returns 15/16 did not change ch12's steady meter reading.
+- A channel's FireWire send carries nothing while its input is FireWire, even post-DSP. Streams 15/16 read exact digital zero with ch12 on FireWire input. So a FireWire-return loop cannot measure EQ; calibration needs an analogue input.
+- With an analogue input, `post` = 1 does give a post-EQ send: a +15 dB high-band boost raised the 4.5–5.6 kHz band of `_Ch 8_in` by 15.7 dB.
+- osclive sends no channel meter levels to the bridge, so desk meters are only visible on the desk.
+- Desk state worth knowing: the main fader read 1.0 (top of travel) on 2026-10-20. ch12 is not assigned to main and has no sends up.
+
+### Calibration attempts (2026-10-19, superseded)
 
 `jive-room -studiolive-calibrate -studiolive-channel N -confirm-apply -confirm-playback` is built. It steps a mono channel's HPF/EQ through 64 bridge-verified settings and measures each against a flat reference: Welch transfer at 1/12 octave, peak centre and gain, and HPF −3 dB corner. It needs pink noise to reach that channel's input, and its FireWire send to be post-DSP. On success it writes `~/studiolive/calibration.json`, which every command loads and treats as verified. On this desk:
 - **The FireWire-return loop fails.** With ch8 `firewire` and `post` on, pink noise played to each of the 16 FireWire returns reached no capture stream, and no channel meter moved. Either the `firewire` switch does not select the FireWire return as the channel input on the 16.0.2, or the returns are routed elsewhere (osclive has a masters-level `monFirewire`). Both switches were set back off.

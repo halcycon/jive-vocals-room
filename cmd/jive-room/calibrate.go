@@ -2,15 +2,19 @@ package main
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
 	"maps"
 	"math"
 	"os"
+	"os/exec"
 	"os/signal"
+	"regexp"
 	"sort"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -31,6 +35,8 @@ const (
 	minCalPoints    = 4
 	calSettleWrites = 300 * time.Millisecond
 )
+
+var alsaDevicePattern = regexp.MustCompile(`^[A-Za-z0-9:,_.=-]{1,64}$`)
 
 // calSweepRaws are the knob positions measured for each control.
 var calSweepRaws = []int{0, 32, 64, 96, 128, 160, 192, 224, 255}
@@ -270,7 +276,86 @@ func applyQuietly(s *bridgeSession, w studiolive.WireProposal) error {
 	return nil
 }
 
-func runCalibrate(bridgeAddr string, channel int, jackClient, outPath string, confirmed bool, w io.Writer) error {
+// externalPlayer plays the reference through an ALSA device (left channel only,
+// so a stereo plug into a balanced input does not cancel) instead of JACK.
+type externalPlayer struct {
+	device string
+	path   string
+}
+
+func writeLeftOnlyWAV(path string, mono []float64, rate int) error {
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	data := make([]float32, 2*len(mono))
+	for i, v := range mono {
+		data[2*i] = float32(v)
+	}
+	dataBytes := uint32(4 * len(data)) //nolint:gosec // bounded by the calibration signal length
+	r := uint32(rate)                  //nolint:gosec // positive JACK rate
+	for _, v := range []any{
+		[4]byte{'R', 'I', 'F', 'F'},
+		uint32(4+26+12+8) + dataBytes,
+		[4]byte{'W', 'A', 'V', 'E'},
+		[4]byte{'f', 'm', 't', ' '},
+		uint32(18), uint16(3), uint16(2), r, r * 8, uint16(8), uint16(32), uint16(0),
+		[4]byte{'f', 'a', 'c', 't'},
+		uint32(4), uint32(len(mono)), //nolint:gosec // bounded
+		[4]byte{'d', 'a', 't', 'a'},
+		dataBytes,
+	} {
+		if err := binary.Write(f, binary.LittleEndian, v); err != nil {
+			return err
+		}
+	}
+	return binary.Write(f, binary.LittleEndian, data)
+}
+
+// capture plays the reference externally and records the steady middle.
+func (e externalPlayer) capture(ctx context.Context, opts live.InputOptions, plan paPlan, rate int) ([]float64, error) {
+	frames := plan.endFrame - plan.startFrame
+	rec := newRecorder(frames)
+	opts.SampleTap = rec.tap
+	opts.RingFrames = captureRingFrames
+	a, err := live.OpenInputAnalyser(opts)
+	if err != nil {
+		return nil, err
+	}
+	defer a.Close()
+	if err := a.Start(ctx, rec.observe); err != nil {
+		return nil, err
+	}
+	cmd := exec.CommandContext(ctx, "aplay", "-q", "-D", e.device, e.path) //nolint:gosec // operator flag, validated by alsaDevicePattern; no shell
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("aplay: %w", err)
+	}
+	defer func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	}()
+	select {
+	case <-ctx.Done():
+		return nil, errCaptureCancelled
+	case <-time.After(time.Duration(float64(plan.startFrame) / float64(rate) * float64(time.Second))):
+	}
+	rec.arm()
+	select {
+	case <-ctx.Done():
+		return nil, errCaptureCancelled
+	case <-rec.full:
+	case <-time.After(time.Duration(plan.spec.DurationSeconds+2) * time.Second):
+		return nil, fmt.Errorf("capture did not fill")
+	}
+	_ = a.Close()
+	if err := rec.dropError(); err != nil {
+		return nil, err
+	}
+	return rec.samples, nil
+}
+
+func runCalibrate(bridgeAddr string, channel int, jackClient, outPath, play string, confirmed bool, w io.Writer) error {
 	if channel < 1 || channel > studiolive.MonoInputChannels {
 		return usageError{fmt.Errorf("-studiolive-calibrate needs a mono -studiolive-channel 1..%d", studiolive.MonoInputChannels)}
 	}
@@ -278,8 +363,8 @@ func runCalibrate(bridgeAddr string, channel int, jackClient, outPath string, co
 	sink, source := fmt.Sprintf("_Ch %d_out", channel), fmt.Sprintf("_Ch %d_in", channel)
 	if !confirmed {
 		return usageError{fmt.Errorf(`calibration plays pink noise into %s's FireWire return (%s) and steps %s's HPF/EQ through the bridge.
-Before running: set %s's input to its FireWire return and its FireWire send post-DSP, pull its fader down,
-and keep it off anything audible. Its HPF/EQ is snapshotted and restored afterwards.
+Before running: set %s's FireWire send post-DSP and feed its input (its FireWire return, or a cable from
+-calibration-play), pull its fader down, and keep it off anything audible. Its HPF/EQ is snapshotted and restored.
 Re-run with -confirm-apply -confirm-playback`, ch, sink, ch, ch)}
 	}
 	s, err := openBridgeSession(bridgeAddr)
@@ -287,9 +372,20 @@ Re-run with -confirm-apply -confirm-playback`, ch, sink, ch, ch)}
 		return err
 	}
 	defer s.close()
-	for _, sw := range []string{"firewire", "post"} {
-		if v, ok := s.c.State.Get(studiolive.Control{Channel: ch, Name: sw}); !ok || !v.On() {
-			return fmt.Errorf("%s/%s is off: set %s's input to its FireWire return and its FireWire send post-DSP first", ch, sw, ch)
+	var ext *externalPlayer
+	if dev, ok := strings.CutPrefix(play, "alsa:"); ok && alsaDevicePattern.MatchString(dev) {
+		ext = &externalPlayer{device: dev, path: outPath + ".reference-left.wav"}
+	} else if play != "" {
+		return usageError{fmt.Errorf("-calibration-play must be alsa:<device>, e.g. alsa:plughw:0,0")}
+	}
+	want := map[string]bool{"firewire": true, "post": true}
+	if ext != nil {
+		want["firewire"] = false
+	}
+	for sw, on := range want {
+		if v, ok := s.c.State.Get(studiolive.Control{Channel: ch, Name: sw}); !ok || v.On() != on {
+			return fmt.Errorf("%s/%s must be %s for this loop (FireWire send post-DSP; input %s)", ch, sw, map[bool]string{true: "on", false: "off"}[on],
+				map[bool]string{true: "from its FireWire return", false: "analogue, cabled from " + play}[ext == nil])
 		}
 	}
 	before, err := studiolive.ProfileFromState(s.c.State, []int{channel}, false, "before calibration", time.Now())
@@ -326,6 +422,13 @@ Re-run with -confirm-apply -confirm-playback`, ch, sink, ch, ch)}
 		return err
 	}
 	ref := plan.reference.Samples[plan.startFrame:plan.endFrame]
+	if ext != nil {
+		if err := writeLeftOnlyWAV(ext.path, plan.reference.Samples, rate); err != nil {
+			return err
+		}
+		defer os.Remove(ext.path)
+		sink = play + " (left channel)"
+	}
 	opts, err := liveOptions(string(live.BackendJACK), []string{source}, 0, jackClient+"-cal")
 	if err != nil {
 		return err
@@ -342,19 +445,26 @@ Re-run with -confirm-apply -confirm-playback`, ch, sink, ch, ch)}
 			return fmt.Errorf("step %s: %w", st.label, err)
 		}
 		time.Sleep(calSettleWrites)
-		pc, err := playAndCapture(ctx, opts, sink, plan)
+		var samples []float64
+		if ext != nil {
+			samples, err = ext.capture(ctx, opts, plan, rate)
+		} else {
+			var pc playCapture
+			pc, err = playAndCapture(ctx, opts, sink, plan)
+			samples = pc.samples
+		}
 		if err != nil {
 			return fmt.Errorf("step %s: %w", st.label, err)
 		}
 		peak := 0.0
-		for _, x := range pc.samples {
+		for _, x := range samples {
 			peak = math.Max(peak, math.Abs(x))
 		}
 		peakDB := 20 * math.Log10(math.Max(peak, 1e-12))
 		if peakDB >= calClipDBFS {
 			return fmt.Errorf("step %s: capture peak %.1f dBFS is clipping", st.label, peakDB)
 		}
-		centres, gains := transferDB(ref, pc.samples, rate)
+		centres, gains := transferDB(ref, samples, rate)
 		if st.label == "flat" {
 			flat = gains
 			if peakDB < -60 {

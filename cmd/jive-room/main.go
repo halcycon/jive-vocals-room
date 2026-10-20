@@ -76,6 +76,7 @@ func run(args []string) error {
 	profilesDir := fs.String("profiles-dir", filepath.Join(home, "studiolive", "profiles"), "daemon: directory for saved desk profiles")
 	liveAdviceFile := fs.String("live-advice-file", "", "run the live recommender over a WAV/FLAC voice recording and print its advice (offline)")
 	calibrate := fs.Bool("studiolive-calibrate", false, "measure channel HPF/EQ curves on a mono -studiolive-channel looped through its FireWire return (needs -confirm-apply -confirm-playback)")
+	calibrationPlay := fs.String("calibration-play", "", "with -studiolive-calibrate, play the reference through an ALSA device cabled into the channel, e.g. alsa:plughw:0,0 (left channel only)")
 	calibrationPath := fs.String("studiolive-calibration", filepath.Join(home, "studiolive", "calibration.json"), "measured calibration file; loaded when present, written by -studiolive-calibrate")
 	venue := fs.String("venue", "", "venue or room label")
 	out := fs.String("out", "jive-room-session.json", "session JSON path")
@@ -90,6 +91,13 @@ func run(args []string) error {
 	fs.Float64Var(&pink.LowPassHz, "pink-lowpass-hz", pink.LowPassHz, "generated pink-noise low-pass in Hz")
 	if err := fs.Parse(args); err != nil {
 		return usageError{err}
+	}
+	if !*calibrate {
+		if loaded, err := studiolive.LoadCalibration(*calibrationPath); err != nil {
+			return fmt.Errorf("calibration %s: %w", *calibrationPath, err)
+		} else if loaded && (*daemonMode || *ringOut) {
+			fmt.Fprintf(os.Stderr, "using measured calibration %s\n", *calibrationPath)
+		}
 	}
 	if *generatePink != "" {
 		if _, err := room.WritePinkWAV(*generatePink, pink); err != nil {
@@ -119,12 +127,7 @@ func run(args []string) error {
 		}
 	}
 	if *calibrate {
-		return runCalibrate(*bridgeAddr, *studioLiveChannel, *jackClient, *calibrationPath, *confirmApply && *confirmPlayback, os.Stdout)
-	}
-	if loaded, err := studiolive.LoadCalibration(*calibrationPath); err != nil {
-		return fmt.Errorf("calibration %s: %w", *calibrationPath, err)
-	} else if loaded && (*daemonMode || *ringOut) {
-		fmt.Fprintf(os.Stderr, "using measured calibration %s\n", *calibrationPath)
+		return runCalibrate(*bridgeAddr, *studioLiveChannel, *jackClient, *calibrationPath, *calibrationPlay, *confirmApply && *confirmPlayback, os.Stdout)
 	}
 	if *daemonMode {
 		return runDaemon(daemonConfig{
